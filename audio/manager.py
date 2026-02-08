@@ -422,8 +422,7 @@ class AudioManager:
                     
                     if text_channel:
                         await text_channel.send(
-                            "🚪 Left voice channel - no one was listening. "
-                            "I'll be back when you need me! 👋"
+                            "🚪 Koi nahi hai mere sath sab chore kar chale gaye, ab mai bhi ja rahi hu! 👋"
                         )
                     
                     log_audio_event(guild_id, "auto_disconnect_alone")

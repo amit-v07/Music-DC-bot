@@ -45,6 +45,14 @@ class StatsManager:
         self.server_stats_file = os.path.join(stats_dir, "server_stats.json")
         self._ensure_stats_dir()
         self._lock = asyncio.Lock()
+        # In-memory caches to minimize disk I/O
+        self._plays_cache: List[dict] = []
+        self._server_stats_cache: Dict[str, dict] = {}
+        self._last_persist_ts: float = 0.0
+        self._persist_interval_sec: float = 5.0
+        self._pending_writes: int = 0
+        # Load existing data into memory
+        self._load_existing()
     
     def _ensure_stats_dir(self):
         """Create stats directory if it doesn't exist"""
@@ -64,121 +72,129 @@ class StatsManager:
                     duration=duration
                 )
                 
-                # Save to plays file
-                await self._append_song_play(play)
+                # Update in-memory plays cache
+                self._plays_cache.append(asdict(play))
+                self._pending_writes += 1
                 
-                # Update server stats
-                await self._update_server_stats(guild_id, title, guild_name)
+                # Update server stats in-memory
+                self._update_server_stats_in_memory(guild_id, title, guild_name)
+                
+                # Persist periodically to reduce disk churn
+                await self._maybe_persist()
                 
                 logger.info(f"Recorded song play: {title} in guild {guild_id} ({guild_name})")
                 
             except Exception as e:
                 logger.error("record_song_play", e, guild_id=guild_id)
     
-    async def _append_song_play(self, play: SongPlay):
-        """Append song play to the plays file"""
-        plays = []
+    def _load_existing(self):
+        """Load existing stats into memory (best-effort)."""
+        # Load plays cache
         if os.path.exists(self.plays_file):
             try:
                 with open(self.plays_file, 'r', encoding='utf-8') as f:
-                    plays = json.load(f)
-            except (json.JSONDecodeError, FileNotFoundError):
-                plays = []
+                    self._plays_cache = json.load(f) or []
+            except Exception:
+                self._plays_cache = []
+        # Cap size to avoid excessive memory
+        if len(self._plays_cache) > 10000:
+            self._plays_cache = self._plays_cache[-10000:]
         
-        plays.append(asdict(play))
+        # Load server stats cache
+        if os.path.exists(self.server_stats_file):
+            try:
+                with open(self.server_stats_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        self._server_stats_cache = data
+            except Exception:
+                self._server_stats_cache = {}
         
-        # Keep only last 10000 plays to prevent file from growing too large
-        if len(plays) > 10000:
-            plays = plays[-10000:]
-        
-        with open(self.plays_file, 'w', encoding='utf-8') as f:
-            json.dump(plays, f, indent=2, ensure_ascii=False)
+    async def _maybe_persist(self):
+        """Persist caches to disk if interval or batch threshold reached."""
+        import time
+        now = time.time()
+        if (now - self._last_persist_ts) >= self._persist_interval_sec or self._pending_writes >= 20:
+            await self._persist_to_disk()
+            self._last_persist_ts = now
+            self._pending_writes = 0
     
-    async def _update_server_stats(self, guild_id: int, title: str, guild_name: str = None):
-        """Update aggregated server statistics"""
-        server_stats = await self.get_server_stats(guild_id)
+    async def _persist_to_disk(self):
+        """Write in-memory caches to disk (atomic best-effort)."""
+        try:
+            # Persist plays
+            plays = self._plays_cache
+            if len(plays) > 10000:
+                plays = plays[-10000:]
+            with open(self.plays_file, 'w', encoding='utf-8') as f:
+                json.dump(plays, f, indent=2, ensure_ascii=False)
+            
+            # Persist server stats
+            with open(self.server_stats_file, 'w', encoding='utf-8') as f:
+                json.dump(self._server_stats_cache, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error("persist_to_disk", e)
+    
+    def _update_server_stats_in_memory(self, guild_id: int, title: str, guild_name: str = None):
+        """Update aggregated server statistics in memory."""
+        key = str(guild_id)
+        if key in self._server_stats_cache:
+            stats_dict = self._server_stats_cache[key]
+            stats = ServerStats(**stats_dict)
+        else:
+            stats = ServerStats(guild_id=guild_id)
         
         # Update guild name if provided
         if guild_name and guild_name != "Unknown Server":
-            server_stats.guild_name = guild_name
+            stats.guild_name = guild_name
         
         # Update total plays
-        server_stats.total_plays += 1
+        stats.total_plays += 1
         
         # Update most played
-        if title in server_stats.most_played:
-            server_stats.most_played[title] += 1
-        else:
-            server_stats.most_played[title] = 1
+        stats.most_played[title] = stats.most_played.get(title, 0) + 1
         
-        # Update recent plays (last 24 hours)
-        server_stats.recent_plays = await self._count_recent_plays(guild_id)
+        # Update recent plays (last 24 hours) using plays cache
+        stats.recent_plays = self._count_recent_plays_from_cache(guild_id)
         
         # Update timestamp
-        server_stats.last_updated = datetime.now().isoformat()
+        stats.last_updated = datetime.now().isoformat()
         
-        # Save updated stats
-        await self._save_server_stats(guild_id, server_stats)
+        # Save back to cache
+        self._server_stats_cache[key] = asdict(stats)
     
     async def get_server_stats(self, guild_id: int) -> ServerStats:
         """Get stats for a specific server"""
         try:
-            if os.path.exists(self.server_stats_file):
-                with open(self.server_stats_file, 'r', encoding='utf-8') as f:
-                    all_stats = json.load(f)
-                    
-                if str(guild_id) in all_stats:
-                    stats_dict = all_stats[str(guild_id)]
-                    # Ensure guild_name exists for backwards compatibility
-                    if 'guild_name' not in stats_dict:
-                        stats_dict['guild_name'] = "Unknown Server"
-                    return ServerStats(**stats_dict)
-            
-            # Return empty stats if not found
+            key = str(guild_id)
+            if key in self._server_stats_cache:
+                stats_dict = self._server_stats_cache[key]
+                if 'guild_name' not in stats_dict:
+                    stats_dict['guild_name'] = "Unknown Server"
+                return ServerStats(**stats_dict)
             return ServerStats(guild_id=guild_id)
-            
         except Exception as e:
             logger.error("get_server_stats", e, guild_id=guild_id)
             return ServerStats(guild_id=guild_id)
     
-    async def _save_server_stats(self, guild_id: int, stats: ServerStats):
-        """Save server stats to file"""
-        try:
-            all_stats = {}
-            if os.path.exists(self.server_stats_file):
-                with open(self.server_stats_file, 'r', encoding='utf-8') as f:
-                    all_stats = json.load(f)
-            
-            all_stats[str(guild_id)] = asdict(stats)
-            
-            with open(self.server_stats_file, 'w', encoding='utf-8') as f:
-                json.dump(all_stats, f, indent=2, ensure_ascii=False)
-                
-        except Exception as e:
-            logger.error("save_server_stats", e, guild_id=guild_id)
+    # Saving handled by periodic persistence of the in-memory cache
     
-    async def _count_recent_plays(self, guild_id: int) -> int:
-        """Count plays in the last 24 hours for a server"""
+    def _count_recent_plays_from_cache(self, guild_id: int) -> int:
+        """Count plays in the last 24 hours using in-memory cache."""
         try:
-            if not os.path.exists(self.plays_file):
-                return 0
-            
-            with open(self.plays_file, 'r', encoding='utf-8') as f:
-                plays = json.load(f)
-            
             cutoff = datetime.now() - timedelta(hours=24)
             recent_count = 0
-            
-            for play in plays:
-                if play['guild_id'] == guild_id:
-                    play_time = datetime.fromisoformat(play['timestamp'])
-                    if play_time > cutoff:
-                        recent_count += 1
-            
+            for play in self._plays_cache:
+                if play.get('guild_id') == guild_id:
+                    try:
+                        play_time = datetime.fromisoformat(play.get('timestamp'))
+                        if play_time > cutoff:
+                            recent_count += 1
+                    except Exception:
+                        continue
             return recent_count
-            
         except Exception as e:
-            logger.error("count_recent_plays", e, guild_id=guild_id)
+            logger.error("count_recent_plays_cache", e, guild_id=guild_id)
             return 0
     
     async def get_all_servers(self) -> List[Dict]:

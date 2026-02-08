@@ -170,7 +170,114 @@ Contributions are welcome! Please feel free to submit issues, feature requests, 
 
 ## 🚀 Deployment
 
-### Render (Recommended)
+### 🐳 Docker Deployment (Recommended)
+
+The easiest way to deploy Music Bot is using Docker. This method handles all dependencies automatically and works on any platform.
+
+#### Quick Start
+
+1. **Prerequisites**: Install [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
+
+2. **Clone Repository**:
+   ```sh
+   git clone https://github.com/Amit-Kumar-Keshri/Music-DC-bot.git
+   cd Music-DC-bot
+   ```
+
+3. **Configure Environment**:
+   ```sh
+   cp .env.example .env
+   # Edit .env and add your DISCORD_TOKEN (required)
+   # Optionally add Spotify credentials
+   ```
+
+4. **Start Services**:
+   ```sh
+   docker-compose up -d
+   ```
+
+5. **View Logs**:
+   ```sh
+   docker-compose logs -f bot        # Bot logs
+   docker-compose logs -f dashboard  # Dashboard logs
+   ```
+
+6. **Access Dashboard**: Open `http://localhost:5000`
+
+#### Docker Commands
+
+| Command | Description |
+|---------|-------------|
+| `docker-compose up -d` | Start services in background |
+| `docker-compose down` | Stop and remove containers |
+| `docker-compose restart` | Restart services |
+| `docker-compose logs -f` | View real-time logs |
+| `docker-compose ps` | Check service status |
+| `docker-compose pull` | Update images |
+
+#### Persistent Data
+
+Docker volumes automatically store persistent data:
+- **logs**: Bot error and info logs
+- **stats**: Usage statistics and song data
+- **audio_cache**: Temporary audio files
+
+To backup data:
+```sh
+docker-compose down
+docker run --rm -v music-dc-bot_bot-stats:/data -v $(pwd):/backup alpine tar czf /backup/stats-backup.tar.gz -C /data .
+```
+
+#### Production Deployment
+
+For production, use a process manager or Docker orchestration:
+
+**Option 1: Docker with Auto-Restart**
+```sh
+# Already configured in docker-compose.yml
+docker-compose up -d  # Services auto-restart on failure
+```
+
+**Option 2: Deploy to Cloud with Docker**
+- **Railway**: Push to GitHub and deploy
+- **DigitalOcean App Platform**: Use Dockerfile
+- **AWS ECS/Fargate**: Use provided Dockerfile
+- **Google Cloud Run**: Supports Dockerfile deployment
+
+#### Troubleshooting
+
+**Bot won't start**:
+```sh
+# Check logs for errors
+docker-compose logs bot
+
+# Verify environment variables
+docker-compose config
+
+# Rebuild if needed
+docker-compose build --no-cache
+```
+
+**Dashboard not accessible**:
+```sh
+# Check if port 5000 is available
+docker-compose ps
+
+# Try rebuilding
+docker-compose up -d --force-recreate dashboard
+```
+
+**Audio issues**:
+```sh
+# Clear audio cache
+docker volume rm music-dc-bot_bot-cache
+docker-compose up -d
+```
+
+---
+
+### Render (Cloud Hosting)
+
 
 Render offers persistent disk storage on free tier, perfect for maintaining stats and logs.
 

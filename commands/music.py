@@ -142,8 +142,10 @@ class MusicCog(commands.Cog):
         if audio_manager._is_http_url(query):
             # It's a URL - check if it's a playlist
             if 'list=' in query or 'playlist' in query.lower():
+                # Faster playlist extraction and higher limit
                 ydl_opts['noplaylist'] = False
-                ydl_opts['extract_flat'] = False
+                ydl_opts['extract_flat'] = True  # speed up by not resolving each entry now
+                ydl_opts['playlistend'] = 50     # ensure at least 50 items are pulled
                 # Remove any single search constraints for playlists
                 if 'default_search' in ydl_opts:
                     del ydl_opts['default_search']
@@ -642,6 +644,13 @@ async def handle_song_end(ctx):
         
         # Move to next song
         if audio_manager.next_song(guild_id):
+            # Preload next song in background to reduce gap
+            try:
+                next_song = audio_manager.get_current_song(guild_id)
+                if next_song and next_song.is_lazy:
+                    asyncio.create_task(audio_manager.resolve_lazy_song(next_song))
+            except Exception:
+                pass
             await play_current_song(ctx)
         else:
             # Queue finished

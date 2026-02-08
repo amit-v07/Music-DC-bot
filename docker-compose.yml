@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # Discord Music Bot
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: music-bot:latest
+    container_name: discord-music-bot
+    restart: unless-stopped
+    environment:
+      # Discord Configuration
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - DEFAULT_PREFIX=${DEFAULT_PREFIX:-!}
+      
+      # Spotify Configuration (Optional)
+      - SPOTIPY_CLIENT_ID=${SPOTIPY_CLIENT_ID}
+      - SPOTIPY_CLIENT_SECRET=${SPOTIPY_CLIENT_SECRET}
+      - SPOTIPY_REDIRECT_URI=${SPOTIPY_REDIRECT_URI:-http://localhost:8888/callback}
+      
+      # Bot Configuration
+      - DEFAULT_VOLUME=${DEFAULT_VOLUME:-0.5}
+      - IDLE_TIMEOUT=${IDLE_TIMEOUT:-300}
+      - ALONE_TIMEOUT=${ALONE_TIMEOUT:-60}
+    volumes:
+      # Persistent data volumes
+      - bot-logs:/app/logs
+      - bot-stats:/app/stats
+      - bot-cache:/app/audio_cache
+      # Uncomment for development hot-reload
+      # - ./bot.py:/app/bot.py:ro
+      # - ./commands:/app/commands:ro
+      # - ./audio:/app/audio:ro
+      # - ./utils:/app/utils:ro
+    networks:
+      - music-bot-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Web Dashboard
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: music-bot:latest
+    container_name: music-bot-dashboard
+    restart: unless-stopped
+    command: gunicorn --worker-class gevent --workers 1 --bind 0.0.0.0:5000 dashboard:app
+    environment:
+      # Use same environment variables as bot
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - SPOTIPY_CLIENT_ID=${SPOTIPY_CLIENT_ID}
+      - SPOTIPY_CLIENT_SECRET=${SPOTIPY_CLIENT_SECRET}
+    ports:
+      - "5000:5000"
+    volumes:
+      # Shared volumes with bot for stats access
+      - bot-logs:/app/logs
+      - bot-stats:/app/stats
+      - ./static:/app/static:ro
+      - ./templates:/app/templates:ro
+    networks:
+      - music-bot-network
+    depends_on:
+      bot:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+networks:
+  music-bot-network:
+    driver: bridge
+
+volumes:
+  bot-logs:
+    driver: local
+  bot-stats:
+    driver: local
+  bot-cache:
+    driver: local

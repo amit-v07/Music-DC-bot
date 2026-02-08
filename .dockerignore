@@ -1,0 +1,64 @@
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables (will be passed at runtime)
+.env
+.env.*
+
+# Logs and cache
+logs/
+*.log
+bot_errors.log
+.cache
+
+# Audio and temporary files
+audio_cache/
+temp/
+temp_stats.json
+
+# Statistics (will be persisted via volumes)
+stats.json
+stats/
+
+# Documentation
+*.md
+!README.md
+LICENSE
+OPTIMIZATION_SUMMARY.md
+
+# Docker files
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# OS files
+.DS_Store
+Thumbs.db

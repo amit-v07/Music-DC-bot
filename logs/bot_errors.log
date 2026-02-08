@@ -2800,3 +2800,232 @@ Traceback (most recent call last):
   File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\ext\commands\bot.py", line 968, in _load_from_module_spec
     raise errors.ExtensionFailed(key, e) from e
 discord.ext.commands.errors.ExtensionFailed: Extension 'commands.admin' raised an error: CommandRegistrationError: The command clearqueue is already an existing command or alias.
+2025-07-31 02:39:45,809 - MusicBot - ERROR - error:69 - [guild_join_welcome] 403 Forbidden (error code: 50013): Missing Permissions | Additional info: {'guild_id': 491967161758384140}
+Traceback (most recent call last):
+  File "C:\Users\amitk\Documents\Music Bot\bot.py", line 94, in on_guild_join
+    await welcome_channel.send(embed=embed)
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\abc.py", line 1644, in send
+    data = await state.http.send_message(channel.id, params=params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\http.py", line 756, in request
+    raise Forbidden(response, data)
+discord.errors.Forbidden: 403 Forbidden (error code: 50013): Missing Permissions
+2025-07-31 03:40:41,805 - MusicBot - ERROR - error:69 - [play_command] [WinError 121] The semaphore timeout period has expired | Additional info: {'guild_id': 1400192517831397439, 'user_id': 538286825605693441}
+Traceback (most recent call last):
+  File "C:\Users\amitk\Documents\Music Bot\commands\music.py", line 102, in play
+    await ctx.send(f"➕ Iske baad ye bajega: **{song.title}**")
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\ext\commands\context.py", line 1043, in send
+    return await super().send(
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\abc.py", line 1644, in send
+    data = await state.http.send_message(channel.id, params=params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\http.py", line 642, in request
+    async with self.__session.request(method, url, **kwargs) as response:
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\aiohttp\client.py", line 1194, in __aenter__
+    self._resp = await self._coro
+                 ^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\aiohttp\client.py", line 605, in _request
+    await resp.start(conn)
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\aiohttp\client_reqrep.py", line 966, in start
+    message, payload = await protocol.read()  # type: ignore[union-attr]
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\aiohttp\streams.py", line 622, in read
+    await self._waiter
+aiohttp.client_exceptions.ClientOSError: [WinError 121] The semaphore timeout period has expired
+2025-07-31 03:48:00,752 - MusicBot - ERROR - error:69 - [handle_song_end] [WinError 121] The semaphore timeout period has expired | Additional info: {'guild_id': 1400192517831397439}
+Traceback (most recent call last):
+  File "C:\Users\amitk\Documents\Music Bot\commands\music.py", line 648, in handle_song_end
+    await ctx.send("🎵 Queue finished! Add more songs or I'll leave in 5 minutes if inactive.")
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\ext\commands\context.py", line 1043, in send
+    return await super().send(
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\abc.py", line 1644, in send
+    data = await state.http.send_message(channel.id, params=params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\http.py", line 642, in request
+    async with self.__session.request(method, url, **kwargs) as response:
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\aiohttp\client.py", line 1194, in __aenter__
+    self._resp = await self._coro
+                 ^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\aiohttp\client.py", line 605, in _request
+    await resp.start(conn)
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\aiohttp\client_reqrep.py", line 966, in start
+    message, payload = await protocol.read()  # type: ignore[union-attr]
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\aiohttp\streams.py", line 622, in read
+    await self._waiter
+aiohttp.client_exceptions.ClientOSError: [WinError 121] The semaphore timeout period has expired
+2025-07-31 20:02:37,282 - MusicBot - ERROR - error:69 - [alone_timer] 403 Forbidden (error code: 50013): Missing Permissions | Additional info: {'guild_id': 1208701086458847282}
+Traceback (most recent call last):
+  File "C:\Users\amitk\Documents\Music Bot\audio\manager.py", line 424, in alone_timer
+    await text_channel.send(
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\abc.py", line 1644, in send
+    data = await state.http.send_message(channel.id, params=params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\http.py", line 756, in request
+    raise Forbidden(response, data)
+discord.errors.Forbidden: 403 Forbidden (error code: 50013): Missing Permissions
+2025-08-01 00:23:00,753 - MusicBot - ERROR - error:69 - [alone_timer] 403 Forbidden (error code: 50013): Missing Permissions | Additional info: {'guild_id': 1208701086458847282}
+Traceback (most recent call last):
+  File "C:\Users\amitk\Documents\Music Bot\audio\manager.py", line 424, in alone_timer
+    await text_channel.send(
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\abc.py", line 1644, in send
+    data = await state.http.send_message(channel.id, params=params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\http.py", line 756, in request
+    raise Forbidden(response, data)
+discord.errors.Forbidden: 403 Forbidden (error code: 50013): Missing Permissions
+2025-08-01 00:46:09,377 - MusicBot - ERROR - error:69 - [process_playlist_batch] Spotify support is not configured. | Additional info: {'guild_id': 1400192517831397439}
+Traceback (most recent call last):
+  File "C:\Users\amitk\Documents\Music Bot\commands\music.py", line 186, in _process_playlist_batch
+    songs = await self._process_query(query, ctx.author.id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\Documents\Music Bot\commands\music.py", line 126, in _process_query
+    raise ValueError("Spotify support is not configured.")
+ValueError: Spotify support is not configured.
+2025-08-01 00:46:49,505 - MusicBot - ERROR - error:69 - [process_playlist_batch] Spotify support is not configured. | Additional info: {'guild_id': 1053223116085673985}
+Traceback (most recent call last):
+  File "C:\Users\amitk\Documents\Music Bot\commands\music.py", line 186, in _process_playlist_batch
+    songs = await self._process_query(query, ctx.author.id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\Documents\Music Bot\commands\music.py", line 126, in _process_query
+    raise ValueError("Spotify support is not configured.")
+ValueError: Spotify support is not configured.
+2025-08-01 00:47:07,370 - MusicBot - ERROR - error:69 - [process_playlist_batch] Spotify support is not configured. | Additional info: {'guild_id': 1053223116085673985}
+Traceback (most recent call last):
+  File "C:\Users\amitk\Documents\Music Bot\commands\music.py", line 186, in _process_playlist_batch
+    songs = await self._process_query(query, ctx.author.id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\Documents\Music Bot\commands\music.py", line 126, in _process_query
+    raise ValueError("Spotify support is not configured.")
+ValueError: Spotify support is not configured.
+2025-08-01 01:21:39,691 - MusicBot - ERROR - error:69 - [process_playlist_batch] Spotify support is not configured. | Additional info: {'guild_id': 1053223116085673985}
+Traceback (most recent call last):
+  File "C:\Users\amitk\Documents\Music Bot\commands\music.py", line 186, in _process_playlist_batch
+    songs = await self._process_query(query, ctx.author.id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\Documents\Music Bot\commands\music.py", line 126, in _process_query
+    raise ValueError("Spotify support is not configured.")
+ValueError: Spotify support is not configured.
+2025-08-18 17:33:53,663 - MusicBot - ERROR - error:69 - [play_current_song] Already playing audio. | Additional info: {'guild_id': 1053223116085673985, 'song_title': 'Ve Haaniyaan - Official Video | Ravi Dubey & Sargun Mehta | Danny | Avvy Sra | Dreamiyata Music'}
+Traceback (most recent call last):
+  File "C:\Users\amitk\Documents\Music Bot\commands\music.py", line 584, in play_current_song
+    ctx.voice_client.play(source, after=after_playing)
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_client.py", line 500, in play
+    raise ClientException('Already playing audio.')
+discord.errors.ClientException: Already playing audio.
+2025-09-17 00:20:55,616 - MusicBot - ERROR - error:69 - [play_command_error] Command raised an exception: TimeoutError:  | Additional info: {'guild_id': 1208701086458847282, 'user_id': 482482011571748864}
+Traceback (most recent call last):
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_state.py", line 413, in _inner_connect
+    await self._handshake_websocket()
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_state.py", line 583, in _handshake_websocket
+    await self.ws.poll_event()
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\gateway.py", line 1039, in poll_event
+    raise ConnectionClosed(self.ws, shard_id=None, code=self._close_code)
+discord.errors.ConnectionClosed: Shard ID None WebSocket closed with 4006
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py", line 510, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_state.py", line 420, in _inner_connect
+    await asyncio.sleep(wait)
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py", line 655, in sleep
+    return await future
+           ^^^^^^^^^^^^
+asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\ext\commands\core.py", line 235, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\Documents\Music Bot\commands\music.py", line 64, in play
+    await ctx.author.voice.channel.connect()
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\abc.py", line 1992, in connect
+    await voice.connect(timeout=timeout, reconnect=reconnect, self_deaf=self_deaf, self_mute=self_mute)
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_client.py", line 306, in connect
+    await self._connection.connect(
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_state.py", line 380, in connect
+    await self._connector
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_state.py", line 384, in _wrap_connect
+    await self._connect(*args)
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_state.py", line 429, in _connect
+    await asyncio.wait_for(
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py", line 509, in wait_for
+    async with timeouts.timeout(timeout):
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\asyncio\timeouts.py", line 111, in __aexit__
+    raise TimeoutError from exc_val
+TimeoutError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\ext\commands\bot.py", line 1366, in invoke
+    await ctx.command.invoke(ctx)
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\ext\commands\core.py", line 1029, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\ext\commands\core.py", line 244, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: TimeoutError: 
+2025-09-17 00:20:56,976 - MusicBot - ERROR - error:69 - [command_error] Command raised an exception: TimeoutError:  | Additional info: {'guild_id': 1208701086458847282}
+NoneType: None
+2025-09-17 00:21:16,546 - MusicBot - ERROR - error:69 - [play_command_error] Command raised an exception: TimeoutError:  | Additional info: {'guild_id': 1208701086458847282, 'user_id': 482482011571748864}
+Traceback (most recent call last):
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py", line 510, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_state.py", line 407, in _inner_connect
+    await self._wait_for_state(ConnectionFlowState.got_both_voice_updates)
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_state.py", line 559, in _wait_for_state
+    await sane_wait_for([self._state_event.wait()], timeout=timeout)
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\utils.py", line 735, in sane_wait_for
+    done, pending = await asyncio.wait(ensured, timeout=timeout, return_when=asyncio.ALL_COMPLETED)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py", line 454, in wait
+    return await _wait(fs, timeout, return_when, loop)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py", line 540, in _wait
+    await waiter
+asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\ext\commands\core.py", line 235, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\Documents\Music Bot\commands\music.py", line 64, in play
+    await ctx.author.voice.channel.connect()
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\abc.py", line 1992, in connect
+    await voice.connect(timeout=timeout, reconnect=reconnect, self_deaf=self_deaf, self_mute=self_mute)
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_client.py", line 306, in connect
+    await self._connection.connect(
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_state.py", line 380, in connect
+    await self._connector
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_state.py", line 384, in _wrap_connect
+    await self._connect(*args)
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\voice_state.py", line 429, in _connect
+    await asyncio.wait_for(
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py", line 509, in wait_for
+    async with timeouts.timeout(timeout):
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\asyncio\timeouts.py", line 111, in __aexit__
+    raise TimeoutError from exc_val
+TimeoutError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\ext\commands\bot.py", line 1366, in invoke
+    await ctx.command.invoke(ctx)
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\ext\commands\core.py", line 1029, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\amitk\AppData\Local\Programs\Python\Python312\Lib\site-packages\discord\ext\commands\core.py", line 244, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: TimeoutError: 

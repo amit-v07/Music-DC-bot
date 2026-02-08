@@ -205,11 +205,9 @@ class AdminCog(commands.Cog):
 
     @clearqueue.error
     async def clearqueue_error(self, ctx, error):
-        if isinstance(error, commands.MissingPermissions):
-            await ctx.send("❌ You need administrator permissions to clear the queue!")
-        else:
-            logger.error("clearqueue_error", error, guild_id=ctx.guild.id)
-            await ctx.send("❌ An error occurred while clearing the queue.")
+        # No admin permission required; surface other errors
+        logger.error("clearqueue_error", error, guild_id=ctx.guild.id)
+        await ctx.send("❌ An error occurred while clearing the queue.")
 
 async def setup(bot):
     await bot.add_cog(AdminCog(bot)) 

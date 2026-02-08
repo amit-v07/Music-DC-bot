@@ -56,7 +56,7 @@ class BotConfig:
                 'default_search': 'ytsearch',
                 'source_address': '0.0.0.0',
                 'ignoreerrors': True,  # Continue processing if some videos fail
-                'playlistend': 20,  # Limit playlist size for faster initial load
+                'playlistend': 50,  # Default playlist size limit (can be overridden in code)
                 'skip_unavailable_fragments': True,  # Skip fragments that fail to download
                 'retries': 3,  # Retry failed downloads
                 'fragment_retries': 3,  # Retry failed fragments
@@ -75,8 +75,9 @@ def load_config() -> BotConfig:
     
     return BotConfig(
         discord_token=discord_token,
-        spotify_client_id=os.getenv('SPOTIFY_CLIENT_ID'),
-        spotify_client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'),
+        # Support both SPOTIFY_* and SPOTIPY_* env var names for compatibility
+        spotify_client_id=(os.getenv('SPOTIFY_CLIENT_ID') or os.getenv('SPOTIPY_CLIENT_ID')),
+        spotify_client_secret=(os.getenv('SPOTIFY_CLIENT_SECRET') or os.getenv('SPOTIPY_CLIENT_SECRET')),
         default_prefix=os.getenv('DEFAULT_PREFIX', '!'),
         default_volume=float(os.getenv('DEFAULT_VOLUME', '0.5')),
         idle_timeout=int(os.getenv('IDLE_TIMEOUT', '300')),

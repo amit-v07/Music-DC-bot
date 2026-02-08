@@ -360,8 +360,7 @@ class UIManager:
         """Update or create now playing message"""
         guild_id = ctx.guild.id
         current_song = audio_manager.get_current_song(guild_id)
-        
-        # Clean up old message
+            # Clean up old message before sending a fresh one
         await self._cleanup_message(guild_id, 'now_playing')
         
         if current_song and ctx.voice_client and (ctx.voice_client.is_playing() or ctx.voice_client.is_paused()):
@@ -383,12 +382,9 @@ class UIManager:
             
             view = NowPlayingView(ctx)
             message = await ctx.send(embed=embed, view=view)
-            
-            # Store message reference
             if guild_id not in self.ui_messages:
                 self.ui_messages[guild_id] = {}
             self.ui_messages[guild_id]['now_playing'] = message
-            
             return message
         
         return None
@@ -398,19 +394,16 @@ class UIManager:
         guild_id = ctx.guild.id
         queue = audio_manager.get_queue(guild_id)
         
-        # Clean up old message
+        # Clean up old message before sending a fresh one
         await self._cleanup_message(guild_id, 'queue')
         
         if queue:
             view = QueueView(ctx)
             embed = view.create_queue_embed()
             message = await ctx.send(embed=embed, view=view)
-            
-            # Store message reference
             if guild_id not in self.ui_messages:
                 self.ui_messages[guild_id] = {}
             self.ui_messages[guild_id]['queue'] = message
-            
             return message
         
         return None
