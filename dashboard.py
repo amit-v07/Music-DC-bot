@@ -7,6 +7,8 @@ from flask_socketio import SocketIO, emit
 import asyncio
 import threading
 import time
+import os
+import secrets
 from datetime import datetime, timedelta
 from utils.logger import logger
 from utils.stats_manager import stats_manager
@@ -14,8 +16,15 @@ import json
 
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'music_bot_dashboard_secret_key'
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Use environment variable for SECRET_KEY with secure fallback
+app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
+
+# Restrict CORS to localhost only for security
+socketio = SocketIO(app, cors_allowed_origins=[
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+    "http://0.0.0.0:5000"
+])
 
 # Global variables for caching
 cached_stats = {}
@@ -194,6 +203,17 @@ def api_stats():
             'success': False,
             'error': str(e)
         }), 500
+
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses"""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
 
 
 @app.route('/api/health')

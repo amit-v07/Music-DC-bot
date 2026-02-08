@@ -63,6 +63,8 @@ services:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - SPOTIPY_CLIENT_ID=${SPOTIPY_CLIENT_ID}
       - SPOTIPY_CLIENT_SECRET=${SPOTIPY_CLIENT_SECRET}
+      # Dashboard security
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
     ports:
       - "5000:5000"
     volumes:
