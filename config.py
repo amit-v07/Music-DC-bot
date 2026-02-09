@@ -23,6 +23,7 @@ class BotConfig:
     # Spotify settings
     spotify_client_id: Optional[str] = None
     spotify_client_secret: Optional[str] = None
+    google_api_key: Optional[str] = None
     
     # File paths
     error_log_file: str = 'bot_errors.log'
@@ -87,6 +88,7 @@ def load_config() -> BotConfig:
         default_volume=float(os.getenv('DEFAULT_VOLUME', '0.5')),
         idle_timeout=int(os.getenv('IDLE_TIMEOUT', '300')),
         alone_timeout=int(os.getenv('ALONE_TIMEOUT', '60')),
+        google_api_key=os.getenv('GOOGLE_API_KEY'),
     )
 
 

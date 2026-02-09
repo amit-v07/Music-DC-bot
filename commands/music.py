@@ -12,6 +12,7 @@ from utils.logger import logger, log_command_usage, log_audio_event
 from utils.stats_manager import stats_manager
 from audio.manager import audio_manager, Song
 from ui.views import ui_manager
+from utils.ai_brain import ai_brain
 
 
 class MusicCog(commands.Cog):
@@ -306,8 +307,18 @@ class MusicCog(commands.Cog):
             return
         
         if ctx.voice_client.is_playing() or ctx.voice_client.is_paused():
+            # Get song info for AI context
+            current_song = audio_manager.get_current_song(ctx.guild.id)
+            song_title = current_song.title if current_song else "song"
+            
             ctx.voice_client.stop()
-            await ctx.send("⏭️ Skipped to next song")
+            
+            # AI Response
+            reply = await ai_brain.get_response("skip", {
+                "user": ctx.author.display_name,
+                "song": song_title
+            })
+            await ctx.send(f"⏭️ {reply}")
             log_audio_event(ctx.guild.id, "skipped")
         else:
             await ctx.send("❌ Nothing is currently playing!")
@@ -326,7 +337,10 @@ class MusicCog(commands.Cog):
         if ctx.voice_client.is_playing() or ctx.voice_client.is_paused():
             ctx.voice_client.stop()
         
-        await ctx.send("⏹️ Music band aur queue bhi clear kar di!")
+        # AI Response
+        reply = await ai_brain.get_response("stop", {"user": ctx.author.display_name})
+        await ctx.send(f"⏹️ {reply}")
+        
         await ui_manager.update_all_ui(ctx)
         log_audio_event(ctx.guild.id, "stopped")
     
@@ -755,7 +769,9 @@ async def handle_song_end(ctx):
             # Queue finished - check if autoplay is enabled
             if audio_manager.is_autoplay_enabled(guild_id):
                 try:
-                    await ctx.send("🎵 **Autoplay**: Queue khatam? Ruko, abhi aur mast gaane dhoondh ke lati hoon... 🔎")
+                    # AI Response for queue end
+                    reply_end = await ai_brain.get_response("queue_end", {"user": "Music Lovers"})
+                    await ctx.send(f"🎵 **Autoplay**: {reply_end}")
                     
                     # Get recommendations
                     recommendations = await audio_manager.get_autoplay_recommendations(guild_id, count=5)
@@ -770,13 +786,18 @@ async def handle_song_end(ctx):
                         # Start playing first recommendation
                         await play_current_song(ctx)
                         
-                        await ctx.send(f"✅ Lo ji, **{len(recommendations)}** aur related gaane add kar diye! Maza aayega! 🔥")
+                        # AI Response for adding songs
+                        first_song = recommendations[0].title
+                        reply_added = await ai_brain.get_response("autoplay_start", {"song": first_song, "count": len(recommendations)})
+                        await ctx.send(f"✅ {reply_added}")
+                        
                         log_audio_event(guild_id, "autoplay_activated", f"{len(recommendations)} songs")
                         
                         # Trigger buffer check immediately in case we need even more (unlikely but good safety)
                         # asyncio.create_task(trigger_autoplay_buffer(ctx, guild_id))
                     else:
-                        await ctx.send("❌ Arre yaar, koi dhang ka gaana hi nahi mila. Autoplay pause kar rahi hoon. 😔")
+                        reply_fail = await ai_brain.get_response("error", {"user": "System"})
+                        await ctx.send(f"❌ {reply_fail} (No recommendations found)")
                         await ctx.send("🎵 Queue finished! Add more songs or I'll leave in 5 minutes if inactive.")
                         asyncio.create_task(idle_disconnect(ctx))
                         
@@ -814,7 +835,11 @@ async def trigger_autoplay_buffer(ctx, guild_id):
         
         if recommendations:
             audio_manager.add_songs(guild_id, recommendations)
-            await ctx.send(f"🎵 **Autoplay**: Backstage se **{len(recommendations)}** aur gaane ready kar liye hain! Non-stop music! 🎶")
+            
+            # AI Response for buffer
+            reply_buffer = await ai_brain.get_response("autoplay_start", {"song": "Backup Dancers", "count": len(recommendations)})
+            await ctx.send(f"🎵 **Autoplay**: {reply_buffer} (Buffered {len(recommendations)} more)")
+            
             await ui_manager.update_all_ui(ctx)
             log_audio_event(guild_id, "autoplay_buffered", f"{len(recommendations)} songs")
             
