@@ -20,6 +20,7 @@ class Song:
     title: str
     url: Optional[str] = None
     webpage_url: Optional[str] = None
+    original_url: Optional[str] = None  # Preserve original YouTube URL for recommendations
     duration: Optional[int] = None
     thumbnail: Optional[str] = None
     requester_id: int = 0
@@ -50,6 +51,9 @@ class AudioManager:
         self.guild_volumes: Dict[int, float] = {}
         self.repeat_flags: Dict[int, bool] = {}
         self.alone_timers: Dict[int, asyncio.Task] = {}
+        
+        # Autoplay state
+        self.autoplay_enabled: Dict[int, bool] = {}
         
         # Initialize Spotify client if credentials are available
         self.spotify_client = None
@@ -266,6 +270,12 @@ class AudioManager:
                     # Successfully resolved! Update song with resolved information
                     song.url = info['url']
                     song.title = info.get('title', song.title)
+                    
+                    # Preserve original YouTube URL before overwriting webpage_url
+                    if info.get('webpage_url') and 'youtube.com' in info.get('webpage_url', ''):
+                        song.original_url = info['webpage_url']
+                    
+                    song.webpage_url = info.get('webpage_url', song.webpage_url)
                     song.duration = info.get('duration', song.duration)
                     song.thumbnail = info.get('thumbnail', song.thumbnail)
                     
@@ -473,6 +483,74 @@ class AudioManager:
             removed_count += 1
         
         return removed_count
+    
+    # Autoplay functionality
+    def enable_autoplay(self, guild_id: int):
+        """Enable autoplay for a guild"""
+        self.autoplay_enabled[guild_id] = True
+        logger.info(f"Autoplay enabled for guild {guild_id}")
+    
+    def disable_autoplay(self, guild_id: int):
+        """Disable autoplay for a guild"""
+        self.autoplay_enabled[guild_id] = False
+        logger.info(f"Autoplay disabled for guild {guild_id}")
+    
+    def is_autoplay_enabled(self, guild_id: int) -> bool:
+        """Check if autoplay is enabled for a guild"""
+        return self.autoplay_enabled.get(guild_id, False)
+    
+    async def get_autoplay_recommendations(self, guild_id: int, count: int = 5) -> List[Song]:
+        """
+        Fetch next batch of related songs from YouTube based on listening history
+        
+        Args:
+            guild_id: Guild ID
+            count: Number of songs to fetch
+            
+        Returns:
+            List of Song objects
+        """
+        try:
+            # Import here to avoid circular dependency
+            from audio.recommendation_service import recommendation_manager
+            from utils.listening_history import listening_history
+            
+            # Get the last played video URL
+            last_url = listening_history.get_last_played_url(guild_id)
+            
+            if not last_url:
+                logger.warning(f"No listening history found for guild {guild_id}")
+                return []
+            
+            # Get recommendations
+            recommendations = await recommendation_manager.get_next_recommendations(
+                last_url,
+                count=count
+            )
+            
+            if not recommendations:
+                logger.warning(f"No recommendations returned for guild {guild_id}")
+                return []
+            
+            # Convert RecommendedSong to Song objects
+            songs = []
+            for rec in recommendations:
+                song = Song(
+                    title=rec.title,
+                    webpage_url=rec.video_url,
+                    duration=rec.duration,
+                    thumbnail=rec.thumbnail,
+                    requester_id=0,  # Autoplay requester
+                    is_lazy=True  # Will be resolved when played
+                )
+                songs.append(song)
+            
+            logger.info(f"Generated {len(songs)} autoplay recommendations for guild {guild_id}")
+            return songs
+            
+        except Exception as e:
+            logger.error("get_autoplay_recommendations", e, guild_id=guild_id)
+            return []
 
 
 # Global audio manager instance

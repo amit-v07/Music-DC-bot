@@ -39,6 +39,11 @@ class BotConfig:
     command_cooldown: float = 1.0
     api_request_delay: float = 0.1
     
+    # Autoplay settings
+    autoplay_songs_per_batch: int = 5  # How many songs to add when queue ends
+    autoplay_max_history: int = 20  # Max recent songs to track per server
+    autoplay_enabled_by_default: bool = False
+    
     def __post_init__(self):
         """Initialize default options after dataclass creation"""
         if self.ffmpeg_options is None:

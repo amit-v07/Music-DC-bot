@@ -353,8 +353,7 @@ docker stats discord-music-bot music-bot-dashboard
 **Health checks**:
 ```bash
 # Service status
-docker-compose ps
-
+ 
 # Health check logs
 docker inspect discord-music-bot --format='{{json .State.Health}}' | jq
 ```

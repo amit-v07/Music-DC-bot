@@ -58,6 +58,44 @@ class MusicBot(commands.Bot):
             name=f"music in {len(self.guilds)} servers | {config.default_prefix}help"
         )
         await self.change_presence(activity=activity)
+        
+        # One-time broadcast for new feature
+        import os
+        if not os.path.exists("broadcast_done.flag"):
+            logger.info("Starting one-time broadcast...")
+            message = (
+                "📢 **Hiii Friends!** 👋\n\n"
+                "Main wapas aa gayi hoon ek naye dhamakedaar update ke saath! 💃\n"
+                "Music ab non-stop chalega kyunki maine **Autoplay Mode** seekh liya hai! 🔥\n\n"
+                "Jab queue khatam hogi, main khud hi mast gaane bajaungi. Boriyat ka the end! 😎\n\n"
+                "**Try karo:** `!autoplay on`\n\n"
+                "Enjoy karo guys! 🎵✨"
+            )
+            
+            count = 0
+            for guild in self.guilds:
+                try:
+                    target = guild.system_channel
+                    if not target:
+                        for channel in guild.text_channels:
+                            if channel.permissions_for(guild.me).send_messages:
+                                target = channel
+                                break
+                    
+                    if target:
+                        await target.send(message)
+                        count += 1
+                        logger.info(f"Broadcast sent to {guild.name}")
+                        # Small delay to avoid rate limits
+                        await asyncio.sleep(1)
+                except Exception as e:
+                    logger.error(f"Broadcast failed for {guild.name}: {e}")
+            
+            logger.info(f"Broadcast completed. Sent to {count} servers.")
+            
+            # Create flag file
+            with open("broadcast_done.flag", "w") as f:
+                f.write("done")
     
     async def on_guild_join(self, guild):
         """Handle bot joining a new guild"""

@@ -446,4 +446,4 @@ class UIManager:
 
 
 # Global UI manager instance
-ui_manager = UIManager() 
+ui_manager = UIManager()

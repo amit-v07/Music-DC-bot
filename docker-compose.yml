@@ -29,10 +29,11 @@ services:
       - bot-stats:/app/stats
       - bot-cache:/app/audio_cache
       # Uncomment for development hot-reload
-      # - ./bot.py:/app/bot.py:ro
-      # - ./commands:/app/commands:ro
-      # - ./audio:/app/audio:ro
-      # - ./utils:/app/utils:ro
+      - ./bot.py:/app/bot.py:ro
+      - ./commands:/app/commands:ro
+      - ./audio:/app/audio:ro
+      - ./config.py:/app/config.py:ro
+      - ./utils:/app/utils:ro
     networks:
       - music-bot-network
     deploy:
@@ -57,7 +58,8 @@ services:
     image: music-bot:latest
     container_name: music-bot-dashboard
     restart: unless-stopped
-    command: gunicorn --worker-class gevent --workers 1 --bind 0.0.0.0:5000 dashboard:app
+    # Run dashboard with production WSGI server (gunicorn with gevent-websocket support)
+    command: gunicorn --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker --workers 1 --bind 0.0.0.0:5000 dashboard:app
     environment:
       # Use same environment variables as bot
       - DISCORD_TOKEN=${DISCORD_TOKEN}

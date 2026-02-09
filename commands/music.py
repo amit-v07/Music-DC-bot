@@ -539,6 +539,74 @@ class MusicCog(commands.Cog):
         else:
             logger.error("volume_command_error", error, guild_id=ctx.guild.id)
             await ctx.send("❌ An error occurred with the volume command.")
+    
+    @commands.command(aliases=['ap', 'auto'])
+    async def autoplay(self, ctx, toggle: str = None):
+        """Toggle autoplay mode - automatically plays related songs when queue ends"""
+        log_command_usage(ctx, "autoplay", toggle or "")
+        
+        guild_id = ctx.guild.id
+        current_status = audio_manager.is_autoplay_enabled(guild_id)
+        
+        # If no argument, just toggle
+        if toggle is None:
+            new_status = not current_status
+        elif toggle.lower() in ['on', 'enable', 'true', '1']:
+            new_status = True
+        elif toggle.lower() in ['off', 'disable', 'false', '0']:
+            new_status = False
+        else:
+            await ctx.send("❌ Invalid option! Use `!autoplay on` or `!autoplay off`")
+            return
+        
+        if new_status:
+            audio_manager.enable_autoplay(guild_id)
+            await ctx.send(
+                "🎵 **Autoplay chalu kar diya!**\n"
+                "Ab queue khatam hone ke baad main khud related songs bajaungi. Tension mat lo, party chalti rahegi! 🚀\n"
+                "Band karna ho toh `!autoplay off` bol dena."
+            )
+        else:
+            audio_manager.disable_autoplay(guild_id)
+            await ctx.send("⏸️ **Autoplay band.** Ab queue khatam toh music khatam. Boriyat shuru? 😴")
+        
+        log_audio_event(guild_id, f"autoplay_{'enabled' if new_status else 'disabled'}")
+    
+    @commands.command()
+    async def recommend(self, ctx, count: int = 5):
+        """Manually get song recommendations based on your listening history"""
+        log_command_usage(ctx, "recommend", str(count))
+        
+        if not (1 <= count <= 10):
+            await ctx.send("❌ Please specify a count between 1 and 10")
+            return
+        
+        try:
+            processing_msg = await ctx.send("🔄 Ruko, mast recommendations dhoondh rahi hoon...")
+            
+            recommendations = await audio_manager.get_autoplay_recommendations(ctx.guild.id, count)
+            
+            if not recommendations:
+                await processing_msg.edit(content="❌ Arre, kuch mila hi nahi. Pehle kuch gaane toh bajao!")
+                return
+            
+            # Add recommendations to queue
+            queue_position = audio_manager.add_songs(ctx.guild.id, recommendations)
+            
+            # Start playing if nothing is currently playing
+            if ctx.voice_client and not ctx.voice_client.is_playing() and not ctx.voice_client.is_paused():
+                await play_current_song(ctx)
+            
+            await processing_msg.edit(
+                content=f"✅ Lo ji, **{len(recommendations)}** gaane queue mein daal diye! Enjoy! 🎶"
+            )
+            await ui_manager.update_all_ui(ctx)
+            log_audio_event(ctx.guild.id, "manual_recommendations", f"{len(recommendations)} songs")
+            
+        except Exception as e:
+            logger.error("recommend_command", e, guild_id=ctx.guild.id)
+            await ctx.send("❌ Oops, recommendations lane mein kuch gadbad ho gayi. Phir se try karo.")
+
 
 
 async def play_current_song(ctx):
@@ -591,6 +659,21 @@ async def play_current_song(ctx):
                 duration=current_song.duration,
                 guild_name=ctx.guild.name
             )
+            
+            # Record in listening history for recommendations
+            from utils.listening_history import listening_history
+            try:
+                # Use original_url (YouTube URL) for recommendations, fallback to webpage_url if not set
+                history_url = current_song.original_url or current_song.webpage_url
+                listening_history.record_play(
+                    guild_id=guild_id,
+                    title=current_song.title,
+                    url=history_url,
+                    requester_id=current_song.requester_id,
+                    duration=current_song.duration
+                )
+            except Exception as e:
+                logger.error("listening_history_record", e, guild_id=guild_id)
             
             # Update UI
             await ui_manager.update_all_ui(ctx)
@@ -651,19 +734,93 @@ async def handle_song_end(ctx):
                     asyncio.create_task(audio_manager.resolve_lazy_song(next_song))
             except Exception:
                 pass
+            
             await play_current_song(ctx)
+            
+            # Continuous Autoplay: Check if we need to buffer more songs
+            if audio_manager.is_autoplay_enabled(guild_id):
+                try:
+                    # Calculate remaining songs
+                    queue = audio_manager.get_queue(guild_id)
+                    current_idx = audio_manager.guild_current_index.get(guild_id, 0)
+                    remaining = len(queue) - (current_idx + 1)
+                    
+                    # If getting low (less than 3 songs), fetch more in background
+                    if remaining <= 2:
+                        asyncio.create_task(trigger_autoplay_buffer(ctx, guild_id))
+                except Exception as e:
+                    logger.error("autoplay_buffer_check", e, guild_id=guild_id)
+
         else:
-            # Queue finished
-            await ctx.send("🎵 Queue finished! Add more songs or I'll leave in 5 minutes if inactive.")
-            await ui_manager.update_all_ui(ctx)
-            
-            # Start idle timer
-            asyncio.create_task(idle_disconnect(ctx))
-            
+            # Queue finished - check if autoplay is enabled
+            if audio_manager.is_autoplay_enabled(guild_id):
+                try:
+                    await ctx.send("🎵 **Autoplay**: Queue khatam? Ruko, abhi aur mast gaane dhoondh ke lati hoon... 🔎")
+                    
+                    # Get recommendations
+                    recommendations = await audio_manager.get_autoplay_recommendations(guild_id, count=5)
+                    
+                    if recommendations:
+                        # Add to queue
+                        audio_manager.add_songs(guild_id, recommendations)
+                        
+                        # Move to next song (first recommendation)
+                        audio_manager.next_song(guild_id)
+                        
+                        # Start playing first recommendation
+                        await play_current_song(ctx)
+                        
+                        await ctx.send(f"✅ Lo ji, **{len(recommendations)}** aur related gaane add kar diye! Maza aayega! 🔥")
+                        log_audio_event(guild_id, "autoplay_activated", f"{len(recommendations)} songs")
+                        
+                        # Trigger buffer check immediately in case we need even more (unlikely but good safety)
+                        # asyncio.create_task(trigger_autoplay_buffer(ctx, guild_id))
+                    else:
+                        await ctx.send("❌ Arre yaar, koi dhang ka gaana hi nahi mila. Autoplay pause kar rahi hoon. 😔")
+                        await ctx.send("🎵 Queue finished! Add more songs or I'll leave in 5 minutes if inactive.")
+                        asyncio.create_task(idle_disconnect(ctx))
+                        
+                except Exception as e:
+                    logger.error("autoplay_activation", e, guild_id=guild_id)
+                    await ctx.send("❌ Autoplay failed. Queue finished!")
+                    asyncio.create_task(idle_disconnect(ctx))
+            else:
+                # No autoplay - normal queue finish behavior
+                await ctx.send("🎵 Queue finished! Add more songs or I'll leave in 5 minutes if inactive.")
+                await ui_manager.update_all_ui(ctx)
+                
+                # Start idle timer
+                asyncio.create_task(idle_disconnect(ctx))
+                
             log_audio_event(guild_id, "queue_finished")
             
     except Exception as e:
         logger.error("handle_song_end", e, guild_id=guild_id)
+
+
+async def trigger_autoplay_buffer(ctx, guild_id):
+    """Background task to buffer more songs for autoplay"""
+    try:
+        # Double check if we still need songs (race conditions)
+        queue = audio_manager.get_queue(guild_id)
+        current_idx = audio_manager.guild_current_index.get(guild_id, 0)
+        remaining = len(queue) - (current_idx + 1)
+        
+        if remaining > 2:
+            return
+
+        # Fetch songs silently
+        recommendations = await audio_manager.get_autoplay_recommendations(guild_id, count=5)
+        
+        if recommendations:
+            audio_manager.add_songs(guild_id, recommendations)
+            await ctx.send(f"🎵 **Autoplay**: Backstage se **{len(recommendations)}** aur gaane ready kar liye hain! Non-stop music! 🎶")
+            await ui_manager.update_all_ui(ctx)
+            log_audio_event(guild_id, "autoplay_buffered", f"{len(recommendations)} songs")
+            
+    except Exception as e:
+        logger.error("autoplay_buffer_task", e, guild_id=guild_id)
+
 
 
 async def idle_disconnect(ctx):
