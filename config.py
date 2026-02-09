@@ -67,6 +67,22 @@ class BotConfig:
                 'retries': 3,  # Retry failed downloads
                 'fragment_retries': 3,  # Retry failed fragments
                 'no_warnings': True,  # Reduce console spam
+                
+                # YouTube bot detection bypass
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'referer': 'https://www.youtube.com/',
+                'nocheckcertificate': True,
+                'prefer_insecure': False,
+                'geo_bypass': True,
+                'age_limit': None,
+                
+                # Additional anti-bot measures
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'web'],
+                        'player_skip': ['webpage', 'configs'],
+                    }
+                },
             }
 
 
