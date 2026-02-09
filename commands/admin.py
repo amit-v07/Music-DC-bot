@@ -166,6 +166,99 @@ class AdminCog(commands.Cog):
             logger.error("clearqueue_command", e, guild_id=ctx.guild.id)
             await ctx.send("❌ Failed to clear queue. Please try again.")
 
+    @commands.command()
+    @commands.is_owner()
+    async def broadcast(self, ctx, *, message: str):
+        """Send a message to all servers (Bot Owner only)"""
+        log_command_usage(ctx, "broadcast")
+        
+        try:
+            sent = 0
+            failed = 0
+            
+            for guild in self.bot.guilds:
+                try:
+                    # Find the first text channel we can send to
+                    for channel in guild.text_channels:
+                        if channel.permissions_for(guild.me).send_messages:
+                            embed = discord.Embed(
+                                title="📢 Bot Announcement",
+                                description=message,
+                                color=0x9B59B6
+                            )
+                            embed.set_footer(text=f"Sent from {ctx.guild.name}")
+                            await channel.send(embed=embed)
+                            sent += 1
+                            break
+                except Exception as e:
+                    logger.error(f"broadcast_to_{guild.id}", e)
+                    failed += 1
+            
+            await ctx.send(f"✅ **Broadcast complete!**\n"
+                          f"Sent to: {sent} servers\n"
+                          f"Failed: {failed} servers")
+            
+        except Exception as e:
+            logger.error("broadcast_command", e)
+            await ctx.send("❌ Failed to broadcast message.")
+
+    @commands.command()
+    @commands.is_owner()
+    async def servers(self, ctx):
+        """List all servers the bot is in (Bot Owner only)"""
+        log_command_usage(ctx, "servers")
+        
+        try:
+            guilds = self.bot.guilds
+            
+            if not guilds:
+                await ctx.send("❌ Not in any servers!")
+                return
+            
+            embed = discord.Embed(
+                title=f"🌐 Connected Servers ({len(guilds)})",
+                color=0x9B59B6
+            )
+            
+            # Split into chunks of 10 servers per field
+            chunk_size = 10
+            for i in range(0, len(guilds), chunk_size):
+                chunk = guilds[i:i+chunk_size]
+                server_list = "\n".join([
+                    f"**{guild.name}** (ID: {guild.id})\n"
+                    f"├ Members: {guild.member_count}\n"
+                    f"└ Owner: {guild.owner.name if guild.owner else 'Unknown'}"
+                    for guild in chunk
+                ])
+                
+                embed.add_field(
+                    name=f"Servers {i+1}-{min(i+chunk_size, len(guilds))}",
+                    value=server_list,
+                    inline=False
+                )
+            
+            embed.set_footer(text=f"Total: {len(guilds)} servers")
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            logger.error("servers_command", e)
+            await ctx.send("❌ Failed to list servers.")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def resetstats(self, ctx):
+        """Reset server statistics (Admin only)"""
+        log_command_usage(ctx, "resetstats")
+        
+        try:
+            await stats_manager.reset_server_stats(ctx.guild.id)
+            await ctx.send("✅ **Statistics reset successfully!**\n"
+                          "All song play counts have been cleared for this server.")
+            
+        except Exception as e:
+            logger.error("resetstats_command", e, guild_id=ctx.guild.id)
+            await ctx.send("❌ Failed to reset statistics.")
+
     # Error handlers
     @setprefix.error
     async def setprefix_error(self, ctx, error):
@@ -208,6 +301,32 @@ class AdminCog(commands.Cog):
         # No admin permission required; surface other errors
         logger.error("clearqueue_error", error, guild_id=ctx.guild.id)
         await ctx.send("❌ An error occurred while clearing the queue.")
+
+    @broadcast.error
+    async def broadcast_error(self, ctx, error):
+        if isinstance(error, commands.NotOwner):
+            await ctx.send("❌ Only the bot owner can use this command!")
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("❌ Please provide a message to broadcast!\nUsage: `!broadcast <message>`")
+        else:
+            logger.error("broadcast_error", error)
+            await ctx.send("❌ An error occurred during broadcast.")
+
+    @servers.error
+    async def servers_error(self, ctx, error):
+        if isinstance(error, commands.NotOwner):
+            await ctx.send("❌ Only the bot owner can use this command!")
+        else:
+            logger.error("servers_error", error)
+            await ctx.send("❌ An error occurred while fetching server list.")
+
+    @resetstats.error
+    async def resetstats_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("❌ You need administrator permissions to reset statistics!")
+        else:
+            logger.error("resetstats_error", error, guild_id=ctx.guild.id)
+            await ctx.send("❌ An error occurred while resetting statistics.")
 
 async def setup(bot):
     await bot.add_cog(AdminCog(bot)) 

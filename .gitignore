@@ -18,3 +18,6 @@ __pycache__/
 
 # Docker
 docker-compose.override.yml
+
+# Landing page (separate repo)
+landing-page/

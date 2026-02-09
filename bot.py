@@ -231,7 +231,7 @@ async def help_command(ctx):
     embed = discord.Embed(
         title="🎵 Music Bot Commands",
         description="Complete guide to all available commands",
-        color=0x2b2d31
+        color=0x9B59B6  # Modern purple theme
     )
     
     # Basic Controls
@@ -243,7 +243,8 @@ async def help_command(ctx):
             "`pause` — Pause current song\n"
             "`resume` — Resume playback\n"
             "`stop` — Stop and clear queue\n"
-            "`leave` — Leave voice channel"
+            "`leave` — Leave voice channel\n"
+            "`nowplaying` — Show current song with controls"
         ),
         inline=False
     )
@@ -259,18 +260,30 @@ async def help_command(ctx):
             "`repeat` — Toggle repeat current song\n"
             "`remove <number>` — Remove song from queue\n"
             "`move <from> <to>` — Move song position\n"
-            "`clear` — Clear entire queue"
+            "`clear` (aliases: `cleanup`, `clean`) — Clear entire queue"
         ),
         inline=False
     )
     
-    # Audio & Settings
+    # Smart Features
     embed.add_field(
-        name="🔧 **Audio & Settings**",
+        name="🤖 **Smart Features**",
         value=(
+            "`autoplay [on/off]` (aliases: `ap`, `auto`) — Auto-add songs when queue ends\n"
             "`volume <0.1-2.0>` — Set playback volume\n"
-            "`stats` — Show server song statistics (Admin)\n"
-            "`forceleave` — Force disconnect (Admin)\n"
+            "`stats` — Show server music statistics"
+        ),
+        inline=False
+    )
+    
+    # Admin Commands
+    embed.add_field(
+        name="🔧 **Admin Commands**",
+        value=(
+            "`forceleave` — Force disconnect bot\n"
+            "`broadcast <message>` — Send message to all servers\n"
+            "`servers` — List all connected servers\n"
+            "`resetstats` — Reset server statistics"
         ),
         inline=False
     )
@@ -281,14 +294,15 @@ async def help_command(ctx):
             f"• Use `{config.default_prefix}` as the command prefix\n"
             "• Click the buttons on the player for quick controls\n"
             "• Supports YouTube links, playlists, and Spotify URLs\n"
-            "• I'll auto-leave if alone for 1 minute\n"
-            "• Queue supports up to hundreds of songs!"
+            "• Auto-leave if alone for 1 minute\n"
+            "• Queue supports hundreds of songs!\n"
+            "• AI-powered Hinglish responses! 🎉"
         ),
         inline=False
     )
     
     embed.set_footer(
-        text=f"Bot made with ❤️ | Currently in {len(ctx.bot.guilds)} servers",
+        text=f"Music Bot 2026 Edition | In {len(ctx.bot.guilds)} servers",
         icon_url=ctx.bot.user.display_avatar.url
     )
     
