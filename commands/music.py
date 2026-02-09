@@ -580,6 +580,53 @@ class MusicCog(commands.Cog):
                 "Ab queue khatam hone ke baad main khud related songs bajaungi. Tension mat lo, party chalti rahegi! 🚀\n"
                 "Band karna ho toh `!autoplay off` bol dena."
             )
+            
+            # EDGE CASE FIX: If queue is empty and bot is not playing, kickstart autoplay now!
+            queue = audio_manager.get_queue(guild_id)
+            is_playing = ctx.voice_client and (ctx.voice_client.is_playing() or ctx.voice_client.is_paused())
+            
+            if len(queue) == 0 and not is_playing:
+                # Queue is empty! Start autoplay immediately
+                await ctx.send("🎶 Queue toh khali hai... Main abhi kuch dhang ka music bajati hoon! 🔥")
+                
+                try:
+                    # Get recommendations based on listening history
+                    recommendations = await audio_manager.get_autoplay_recommendations(guild_id, count=5)
+                    
+                    if recommendations:
+                        # Add to queue
+                        audio_manager.add_songs(guild_id, recommendations)
+                        
+                        # Join voice channel if not already in one
+                        if not ctx.voice_client:
+                            if ctx.author.voice:
+                                await ctx.author.voice.channel.connect()
+                            else:
+                                await ctx.send("❌ Pehle voice channel mein aao! Main kaise bajau? 🤷")
+                                return
+                        
+                        # Move to first song
+                        audio_manager.next_song(guild_id)
+                        
+                        # Start playing
+                        await play_current_song(ctx)
+                        
+                        # AI Response
+                        first_song = recommendations[0].title
+                        reply = await ai_brain.get_response("autoplay_start", {"song": first_song, "count": len(recommendations)})
+                        await ctx.send(f"✅ {reply}")
+                        
+                        log_audio_event(guild_id, "autoplay_kickstarted", f"{len(recommendations)} songs")
+                    else:
+                        # No listening history yet
+                        await ctx.send(
+                            "🤔 **Hmm...** Pehle kuch songs bajao toh sahi! "
+                            "Mujhe pata chale tumhe kya pasand hai. Phir main sahi recommendations dungi! 😎\n"
+                            "Try: `!play <song name>`"
+                        )
+                except Exception as e:
+                    logger.error("autoplay_kickstart", e, guild_id=guild_id)
+                    await ctx.send("❌ Oops! Kuch gadbad ho gayi. Phir se try karo!")
         else:
             audio_manager.disable_autoplay(guild_id)
             await ctx.send("⏸️ **Autoplay band.** Ab queue khatam toh music khatam. Boriyat shuru? 😴")
