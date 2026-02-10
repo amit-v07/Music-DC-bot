@@ -19,6 +19,13 @@ app = Flask(__name__)
 # Use environment variable for SECRET_KEY with secure fallback
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
 
+# Restrict CORS to localhost only for security
+# socketio = SocketIO(app, cors_allowed_origins=[
+#     "http://localhost:5000",
+#     "http://127.0.0.1:5000",
+#     "http://0.0.0.0:5000"
+# ])
+
 # Allow all origins for remote access
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -33,48 +40,36 @@ class DashboardManager:
     
     def __init__(self):
         self.connected_clients = 0
+        self.update_thread = None
         self.running = False
-        
-        # Initialize a dedicated event loop for async operations
-        self.loop = asyncio.new_event_loop()
-        self.loop_thread = threading.Thread(target=self._start_background_loop, daemon=True)
-        self.loop_thread.start()
     
-    def _start_background_loop(self):
-        """Start the dedicated event loop in a separate thread"""
-        asyncio.set_event_loop(self.loop)
-        self.loop.run_forever()
-
     def start_background_updates(self):
-        """Start scheduled updates on the dedicated loop"""
-        if self.running:
+        """Start background thread for real-time updates"""
+        if self.update_thread and self.update_thread.is_alive():
             return
-            
+        
         self.running = True
-        # Schedule the update task on the loop safely
-        asyncio.run_coroutine_threadsafe(self._update_task(), self.loop)
+        self.update_thread = threading.Thread(target=self._update_loop, daemon=True)
+        self.update_thread.start()
         logger.info("Dashboard background updates started")
     
     def stop_background_updates(self):
         """Stop background updates"""
         self.running = False
+        if self.update_thread:
+            self.update_thread.join(timeout=5)
         logger.info("Dashboard background updates stopped")
     
-    async def _update_task(self):
-        """Async task for sending updates"""
+    def _update_loop(self):
+        """Background loop for sending updates to connected clients"""
         while self.running:
             try:
                 if self.connected_clients > 0:
-                    # Get fresh stats directly (we are in async context now)
-                    stats = await self._fetch_fresh_stats()
+                    # Get fresh stats
+                    stats = self.get_cached_stats(force_refresh=True)
                     
                     # Add real-time connection info
                     stats['connected_clients'] = self.connected_clients
-                    
-                    # Update cache
-                    global cached_stats, cache_timestamp
-                    cached_stats = stats
-                    cache_timestamp = time.time()
                     
                     # Emit to all connected clients
                     socketio.emit('stats_update', {
@@ -83,12 +78,12 @@ class DashboardManager:
                     })
                 
                 # Update every 10 seconds
-                await asyncio.sleep(10)
+                time.sleep(10)
                 
             except Exception as e:
                 logger.error("dashboard_update_loop", e)
-                await asyncio.sleep(5)
-
+                time.sleep(5)  # Wait before retrying
+    
     def get_cached_stats(self, force_refresh=False):
         """Get statistics with caching"""
         global cached_stats, cache_timestamp
@@ -97,16 +92,21 @@ class DashboardManager:
         
         if force_refresh or (current_time - cache_timestamp) > CACHE_DURATION:
             try:
-                # Run the coroutine on the dedicated loop and wait for result
-                future = asyncio.run_coroutine_threadsafe(self._fetch_fresh_stats(), self.loop)
-                fresh_stats = future.result(timeout=5)
+                # Create new event loop for async operations
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                # Get fresh stats
+                fresh_stats = loop.run_until_complete(self._fetch_fresh_stats())
                 
                 cached_stats = fresh_stats
                 cache_timestamp = current_time
                 
+                loop.close()
+                
             except Exception as e:
                 logger.error("get_cached_stats", e)
-                # Return cached stats if available
+                # Return cached stats if available, otherwise empty dict
                 pass
         
         return cached_stats
