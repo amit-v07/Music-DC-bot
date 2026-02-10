@@ -21,3 +21,8 @@ docker-compose.override.yml
 
 # Landing page (separate repo)
 landing-page/
+
+
+venv/
+start.sh
+stop.sh

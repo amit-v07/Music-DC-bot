@@ -59,6 +59,44 @@ class MusicBot(commands.Bot):
         )
         await self.change_presence(activity=activity)
         
+        # Check for Opus library (critical for voice)
+        if not discord.opus.is_loaded():
+            logger.warning("Opus library is NOT loaded! Voice features may fail.")
+            try:
+                # Try to find library using ctypes
+                import ctypes.util
+                opus_path = ctypes.util.find_library('opus')
+                
+                if opus_path:
+                    logger.info(f"Found Opus library at: {opus_path}")
+                    discord.opus.load_opus(opus_path)
+                else:
+                    # Fallback for specific Linux architectures (including the user's aarch64)
+                    possible_paths = [
+                        "libopus.so.0",
+                        "libopus.so",
+                        "/usr/lib/aarch64-linux-gnu/libopus.so.0",
+                        "/usr/lib/x86_64-linux-gnu/libopus.so.0"
+                    ]
+                    
+                    loaded = False
+                    for path in possible_paths:
+                        try:
+                            discord.opus.load_opus(path)
+                            logger.info(f"Successfully loaded Opus from: {path}")
+                            loaded = True
+                            break
+                        except Exception:
+                            continue
+                    
+                    if not loaded:
+                        logger.error("Could not load Opus library. Voice will not work.")
+            
+            except Exception as e:
+                logger.error("opus_load_error", e)
+        else:
+            logger.info("Opus library is successfully loaded")
+        
         # One-time broadcast for new feature
         import os
         if not os.path.exists("broadcast_done.flag"):

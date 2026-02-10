@@ -13,6 +13,7 @@ from utils.stats_manager import stats_manager
 from audio.manager import audio_manager, Song
 from ui.views import ui_manager
 from utils.ai_brain import ai_brain
+from utils.listening_history import listening_history
 
 
 class MusicCog(commands.Cog):
@@ -39,7 +40,14 @@ class MusicCog(commands.Cog):
                 await ctx.send(f"🔄 Okay, aa gayi {ctx.author.voice.channel.name} mein")
         else:
             channel = ctx.author.voice.channel
-            await channel.connect()
+            try:
+                await channel.connect(timeout=60, reconnect=True)
+            except asyncio.TimeoutError:
+                await ctx.send("❌ Connection timed out! Discord voice servers are taking too long to respond. Try again.")
+                return
+            except Exception as e:
+                await ctx.send(f"❌ Failed to connect to voice channel: {str(e)}")
+                return
             await ctx.send(f"✅ Aa gayi main {channel.name} mein, music shuru karein?")
         
         # Check if bot is alone and start timer if needed
@@ -62,7 +70,14 @@ class MusicCog(commands.Cog):
             if not ctx.author.voice:
                 await ctx.send("❌ You need to be in a voice channel!")
                 return
-            await ctx.author.voice.channel.connect()
+            try:
+                await ctx.author.voice.channel.connect(timeout=60, reconnect=True)
+            except asyncio.TimeoutError:
+                await ctx.send("❌ Connection timed out! Discord voice servers are taking too long to respond. Try again.")
+                return
+            except Exception as e:
+                await ctx.send(f"❌ Failed to connect to voice channel: {str(e)}")
+                return
             
             # Check if bot is alone after joining
             if audio_manager.is_bot_alone_in_vc(ctx.guild):
@@ -92,7 +107,7 @@ class MusicCog(commands.Cog):
                 queue_position = audio_manager.add_songs(ctx.guild.id, songs)
                 
                 # Start playing if nothing is currently playing
-                if not ctx.voice_client.is_playing() and not ctx.voice_client.is_paused():
+                if ctx.voice_client and not ctx.voice_client.is_playing() and not ctx.voice_client.is_paused():
                     await play_current_song(ctx)
                 
                 # Send feedback to user
