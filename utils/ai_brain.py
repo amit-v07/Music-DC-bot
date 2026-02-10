@@ -53,7 +53,13 @@ class AIBrain:
             return response.text.strip()
             
         except Exception as e:
-            logger.error(f"ai_generation_failed ({action})", e)
+            # Check for 429 Resource Exhausted
+            error_msg = str(e)
+            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                logger.warning(f"🧠 AI Quota Exceeded (Free Tier Limit). Using fallback for '{action}'.")
+            else:
+                logger.error(f"ai_generation_failed ({action})", e)
+            
             return self._get_fallback_response(action)
 
     def _build_prompt(self, action: str, context: dict) -> str:
