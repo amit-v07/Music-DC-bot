@@ -380,6 +380,18 @@ class UIManager:
                     inline=True
                 )
             
+                embed.add_field(
+                    name="Duration", 
+                    value=current_song.format_duration(),
+                    inline=True
+                )
+            
+            # Add Autoplay status and instruction to footer
+            is_autoplay = audio_manager.is_autoplay_enabled(guild_id)
+            ap_status = "ON" if is_autoplay else "OFF"
+            ap_icon = "🔥" if is_autoplay else "💤"
+            embed.set_footer(text=f"Autoplay: {ap_status} {ap_icon} • Type !ap or !auto to automatically play related songs!")
+            
             view = NowPlayingView(ctx)
             message = await ctx.send(embed=embed, view=view)
             if guild_id not in self.ui_messages:
