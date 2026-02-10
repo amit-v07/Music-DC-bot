@@ -37,4 +37,4 @@ black>=23.7.0
 flake8>=6.0.0
 
 # Production Deployment (Unix only)
-# uvloop>=0.17.0  # Better event loop for Unix systems (not supported on Windows) 
+uvloop>=0.17.0  # Better event loop for Unix systems (not supported on Windows) 
