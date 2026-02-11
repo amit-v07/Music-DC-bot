@@ -8,6 +8,7 @@ from discord.ext import commands
 from config import config
 from utils.logger import logger
 from audio.manager import audio_manager
+from utils.stats_manager import stats_manager
 
 
 class MusicBot(commands.Bot):
@@ -27,6 +28,7 @@ class MusicBot(commands.Bot):
         
         # Store startup time
         self.startup_time = None
+        self.bg_task = None
     
     async def setup_hook(self):
         """Initialize bot components"""
@@ -37,6 +39,9 @@ class MusicBot(commands.Bot):
             await self.load_extension('commands.music')
             await self.load_extension('commands.admin')
             
+            # Start background task for remote control actions
+            self.bg_task = self.loop.create_task(self.process_remote_actions())
+            
             logger.info("All command modules loaded successfully")
             logger.info("Bot setup completed successfully")
             
@@ -44,6 +49,56 @@ class MusicBot(commands.Bot):
             logger.error("setup_hook", e)
             raise
     
+    async def process_remote_actions(self):
+        """Background task to process remote control actions from dashboard"""
+        await self.wait_until_ready()
+        logger.info("Remote control action processor started")
+        
+        while not self.is_closed():
+            try:
+                actions = await stats_manager.get_pending_actions()
+                
+                for action in actions:
+                    guild_id = int(action['guild_id'])
+                    cmd = action['action']
+                    
+                    guild = self.get_guild(guild_id)
+                    if not guild or not guild.voice_client:
+                        continue
+                        
+                    vc = guild.voice_client
+                    
+                    if cmd == 'pause':
+                        if vc.is_playing():
+                            vc.pause()
+                            logger.info(f"Remote action: Paused in {guild.name}")
+                    elif cmd == 'resume':
+                        if vc.is_paused():
+                            vc.resume()
+                            logger.info(f"Remote action: Resumed in {guild.name}")
+                    elif cmd == 'skip':
+                        if vc.is_playing() or vc.is_paused():
+                            vc.stop()
+                            logger.info(f"Remote action: Skipped in {guild.name}")
+                    elif cmd == 'stop':
+                        # Use audio_manager to clean up properly
+                        audio_manager.clear_queue(guild_id)
+                        audio_manager.disable_autoplay(guild_id)
+                        if vc.is_playing() or vc.is_paused():
+                            vc.stop()
+                        logger.info(f"Remote action: Stopped in {guild.name}")
+                
+                await asyncio.sleep(2)  # Poll every 2 seconds
+                
+            except Exception as e:
+                logger.error("process_remote_actions", e)
+                await asyncio.sleep(5)
+
+    async def on_command_completion(self, ctx):
+        """Record successful command usage"""
+        if ctx.guild:
+            await stats_manager.record_command_usage(ctx.guild.id, ctx.command.name)
+
     async def on_ready(self):
         """Bot ready event"""
         self.startup_time = discord.utils.utcnow()
@@ -188,6 +243,15 @@ class MusicBot(commands.Bot):
         try:
             guild = member.guild
             
+            # Check if the BOT was disconnected
+            if member.id == self.user.id:
+                if before.channel is not None and after.channel is None:
+                    logger.info(f"Bot was disconnected from guild {guild.name}")
+                    audio_manager.clear_queue(guild.id)
+                    audio_manager.disable_autoplay(guild.id)
+                    audio_manager.cancel_alone_timer(guild.id)
+                    return
+
             # Only process if bot is in a voice channel
             if not guild.voice_client or not guild.voice_client.channel:
                 return

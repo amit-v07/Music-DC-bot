@@ -4,543 +4,511 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Music Bot - Enhanced Dashboard</title>
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard_enhanced.css') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>Music Bot Dashboard</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard_enhanced.css') }}">
 </head>
 
-<body>
-    <div class="dashboard">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-content">
-                <div class="header-left">
-                    <h1><i class="fas fa-music"></i> Music Bot</h1>
-                    <span class="version">Enhanced Dashboard v2.1 (JSON Stats)</span>
-                </div>
-                <div class="header-right">
-                    <div class="status-indicator" id="connectionStatus">
-                        <i class="fas fa-circle"></i>
-                        <span>Connecting...</span>
-                    </div>
-                    <button class="refresh-btn" id="refreshBtn" onclick="refreshStats()">
-                        <i class="fas fa-sync-alt"></i>
-                    </button>
-                </div>
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i class="fas fa-music brand-icon"></i>
+                <span>Music Bot</span>
             </div>
-        </header>
+
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-tab="overview">
+                    <i class="fas fa-home"></i> Overview
+                </a>
+                <a href="#" class="nav-item" data-tab="analytics">
+                    <i class="fas fa-chart-line"></i> Analytics
+                </a>
+                <a href="#" class="nav-item" data-tab="servers">
+                    <i class="fas fa-server"></i> Servers
+                </a>
+                <a href="#" class="nav-item" data-tab="controls">
+                    <i class="fas fa-gamepad"></i> Controls
+                </a>
+            </nav>
+
+            <div class="connection-status">
+                <div class="status-indicator"></div>
+                <span id="status-text">Connecting...</span>
+            </div>
+        </aside>
 
         <!-- Main Content -->
         <main class="main-content">
-            <!-- Overview Cards -->
-            <section class="overview-section">
-                <div class="card-grid">
+            <!-- Header -->
+            <header class="top-bar">
+                <h1 class="page-title">Dashboard Overview</h1>
+                <div class="system-pills">
+                    <div class="pill">
+                        <i class="fas fa-microchip"></i>
+                        <span id="cpu-usage">--%</span>
+                    </div>
+                    <div class="pill">
+                        <i class="fas fa-memory"></i>
+                        <span id="ram-usage">--%</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Overview View -->
+            <div id="view-overview" class="view-section active">
+                <!-- Stats Grid -->
+                <div class="stats-grid">
                     <div class="stat-card">
-                        <div class="stat-icon">
-                            <i class="fas fa-play-circle"></i>
+                        <div class="stat-icon purple">
+                            <i class="fas fa-play"></i>
                         </div>
-                        <div class="stat-content">
+                        <div class="stat-info">
                             <h3>Total Plays</h3>
-                            <p class="stat-number" id="totalPlays">{{ stats.get('total_plays', 0) | int }}</p>
-                            <span class="stat-change">+<span id="recentPlays">{{ stats.get('recent_plays', 0) }}</span>
-                                today</span>
+                            <p class="stat-value" id="total-plays">--</p>
                         </div>
                     </div>
-
                     <div class="stat-card">
-                        <div class="stat-icon">
+                        <div class="stat-icon blue">
                             <i class="fas fa-server"></i>
                         </div>
-                        <div class="stat-content">
+                        <div class="stat-info">
                             <h3>Active Servers</h3>
-                            <p class="stat-number" id="activeGuilds">{{ stats.get('active_guilds', 0) }}</p>
-                            <span class="stat-change">Serving music</span>
+                            <p class="stat-value" id="active-guilds">--</p>
                         </div>
                     </div>
-
                     <div class="stat-card">
-                        <div class="stat-icon">
+                        <div class="stat-icon green">
                             <i class="fas fa-clock"></i>
                         </div>
-                        <div class="stat-content">
-                            <h3>Uptime</h3>
-                            <p class="stat-number" id="uptime">Online</p>
-                            <span class="stat-change">Last updated: <span id="lastUpdate">now</span></span>
-                        </div>
-                    </div>
-
-                    <div class="stat-card">
-                        <div class="stat-icon">
-                            <i class="fas fa-memory"></i>
-                        </div>
-                        <div class="stat-content">
-                            <h3>Memory Usage</h3>
-                            <p class="stat-number" id="memoryUsage">-</p>
-                            <span class="stat-change">System resources</span>
+                        <div class="stat-info">
+                            <h3>Recent Plays (24h)</h3>
+                            <p class="stat-value" id="recent-plays">--</p>
                         </div>
                     </div>
                 </div>
-            </section>
 
-            <!-- Charts and Details -->
-            <section class="details-section">
-                <div class="details-grid">
-                    <!-- System Info -->
-                    <div class="detail-card">
+                <!-- Content Grid -->
+                <div class="content-grid">
+                    <!-- Top Songs -->
+                    <div class="card wide-card">
                         <div class="card-header">
-                            <h2><i class="fas fa-info-circle"></i> System Information</h2>
-                            <div class="card-actions">
-                                <button class="action-btn" onclick="toggleCard('systemInfo')">
-                                    <i class="fas fa-chevron-up"></i>
-                                </button>
-                            </div>
+                            <h2><i class="fas fa-fire"></i> Most Played Songs</h2>
                         </div>
-                        <div class="card-content" id="systemInfo">
-                            <div class="info-grid">
-                                <div class="info-item">
-                                    <span class="info-label">Cache Status:</span>
-                                    <span class="info-value" id="cacheStatus">Active</span>
-                                </div>
-                                <div class="info-item">
-                                    <span class="info-label">Last Cache Update:</span>
-                                    <span class="info-value" id="cacheUpdate">-</span>
-                                </div>
-                                <div class="info-item">
-                                    <span class="info-label">Connected Clients:</span>
-                                    <span class="info-value" id="connectedClients">1</span>
-                                </div>
-                            </div>
+                        <div class="card-body">
+                            <ul class="ranking-list" id="top-songs-list">
+                                <!-- Populated by JS -->
+                            </ul>
                         </div>
                     </div>
 
-                    <!-- Real-time Logs -->
-                    <div class="detail-card">
-                        <div class="card-header">
-                            <h2><i class="fas fa-terminal"></i> Live Activity</h2>
-                            <div class="card-actions">
-                                <button class="action-btn" onclick="clearLogs()">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                                <button class="action-btn" onclick="toggleCard('liveActivity')">
-                                    <i class="fas fa-chevron-up"></i>
-                                </button>
+                    <!-- System Info & Top Listeners -->
+                    <div class="side-column">
+                        <div class="card">
+                            <div class="card-header">
+                                <h2><i class="fas fa-headphones"></i> Top Listeners</h2>
                             </div>
-                        </div>
-                        <div class="card-content" id="liveActivity">
-                            <div class="logs-container" id="logsContainer">
-                                <div class="log-entry">
-                                    <span class="log-timestamp">{{ stats.get('timestamp', 'Now') }}</span>
-                                    <span class="log-message">Dashboard initialized with song tracking</span>
-                                </div>
+                            <div class="card-body">
+                                <ul class="ranking-list" id="top-listeners-list">
+                                    <li class="empty-state">Waiting for data...</li>
+                                </ul>
                             </div>
                         </div>
                     </div>
-
-                    <!-- Active Servers -->
-                    <div class="detail-card">
-                        <div class="card-header">
-                            <h2><i class="fas fa-server"></i> Active Servers</h2>
-                            <div class="card-actions">
-                                <button class="action-btn" onclick="toggleCard('activeServers')">
-                                    <i class="fas fa-chevron-up"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="card-content" id="activeServers">
-                            <div class="servers-list" id="serversList">
-                                {% if stats.get('servers') %}
-                                {% for server in stats.servers %}
-                                <div class="server-item">
-                                    <div class="server-icon">
-                                        <i class="fas fa-server"></i>
-                                    </div>
-                                    <div class="server-info">
-                                        <div class="server-name">{{ server.guild_name }}</div>
-                                        <div class="server-id">ID: {{ server.guild_id }}</div>
-                                        <div class="server-stats">
-                                            <span class="stat-badge">{{ server.total_plays }} plays</span>
-                                            <span class="stat-badge">{{ server.recent_plays }} recent</span>
-                                        </div>
-                                    </div>
-                                    <div class="server-status">
-                                        <i class="fas fa-circle online"></i>
-                                    </div>
-                                </div>
-                                {% endfor %}
-                                {% else %}
-                                <div class="empty-state">
-                                    <i class="fas fa-server"></i>
-                                    <p>No active servers</p>
-                                </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Most Played Songs -->
-                    <div class="detail-card">
-                        <div class="card-header">
-                            <h2><i class="fas fa-trophy"></i> Top Songs</h2>
-                            <div class="card-actions">
-                                <button class="action-btn" onclick="toggleCard('topSongs')">
-                                    <i class="fas fa-chevron-up"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="card-content" id="topSongs">
-                            <div class="songs-list" id="songsList">
-                                {% if stats.get('most_played') %}
-                                {% for song, count in stats.most_played.items() %}
-                                <div class="song-item">
-                                    <div class="song-rank">{{ loop.index }}</div>
-                                    <div class="song-info">
-                                        <div class="song-title">{{ song }}</div>
-                                        <div class="song-plays">{{ count }} plays</div>
-                                    </div>
-                                    <div class="song-bar">
-                                        <div class="song-progress"
-                                            style="width: {{ (count / stats.most_played.values() | list | max * 100) | round(1) }}%">
-                                        </div>
-                                    </div>
-                                </div>
-                                {% endfor %}
-                                {% else %}
-                                <div class="empty-state">
-                                    <i class="fas fa-music"></i>
-                                    <p>No songs played yet</p>
-                                </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </main>
-
-        <!-- Footer -->
-        <footer class="footer">
-            <div class="footer-content">
-                <div class="footer-left">
-                    <p>&copy; 2025 Music Bot</p>
-                </div>
-                <div class="footer-right">
-                    <p>Real-time monitoring powered by WebSockets</p>
                 </div>
             </div>
-        </footer>
+
+            <!-- Analytics View -->
+            <div id="view-analytics" class="view-section">
+                <div class="charts-grid">
+                    <div class="card chart-card">
+                        <div class="card-header">
+                            <h2>Peak Activity (24h)</h2>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="activityChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card chart-card">
+                        <div class="card-header">
+                            <h2>Command Usage</h2>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="commandsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Servers View -->
+            <div id="view-servers" class="view-section">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Connected Servers</h2>
+                        <input type="text" id="server-search" placeholder="Search servers..." class="search-input">
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Server Name</th>
+                                    <th>ID</th>
+                                    <th>Total Plays</th>
+                                    <th>Command Usage</th>
+                                    <th>Last Active</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="servers-table-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls View -->
+            <div id="view-controls" class="view-section">
+                <div class="control-panel">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2><i class="fas fa-lock"></i> Admin Remote Control</h2>
+                        </div>
+                        <div class="card-body control-body">
+                            <div class="pin-entry">
+                                <label>Enter Admin PIN:</label>
+                                <input type="password" id="admin-pin" placeholder="****" maxlength="4">
+                            </div>
+
+                            <div class="control-actions disabled" id="control-actions">
+                                <div class="server-selector">
+                                    <select id="control-server-select">
+                                        <option value="">Select a server...</option>
+                                    </select>
+                                </div>
+
+                                <div class="button-grid">
+                                    <button class="btn btn-control" onclick="sendAction('resume')">
+                                        <i class="fas fa-play"></i> Resume
+                                    </button>
+                                    <button class="btn btn-control" onclick="sendAction('pause')">
+                                        <i class="fas fa-pause"></i> Pause
+                                    </button>
+                                    <button class="btn btn-control" onclick="sendAction('skip')">
+                                        <i class="fas fa-forward"></i> Skip
+                                    </button>
+                                    <button class="btn btn-control btn-danger" onclick="sendAction('stop')">
+                                        <i class="fas fa-stop"></i> Stop
+                                    </button>
+                                </div>
+                                <div id="action-feedback"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
     </div>
 
     <script>
-        // Global variables
-        let socket;
-        let isConnected = false;
+        // Socket Connection
+        const socket = io();
+        let activityChart = null;
+        let commandsChart = null;
+        let allServers = []; // Store servers data
 
-        // Initialize dashboard
-        document.addEventListener('DOMContentLoaded', function () {
-            initializeSocket();
-            updateConnectionStatus('connecting');
+        // Status Indicators
+        const statusText = document.getElementById('status-text');
+        const statusIndicator = document.querySelector('.status-indicator');
+
+        socket.on('connect', () => {
+            statusText.textContent = 'Live';
+            statusIndicator.classList.add('online');
+            statusIndicator.classList.remove('offline');
         });
 
-        // Socket.IO initialization
-        function initializeSocket() {
-            socket = io();
+        socket.on('disconnect', () => {
+            statusText.textContent = 'Disconnected';
+            statusIndicator.classList.add('offline');
+            statusIndicator.classList.remove('online');
+        });
 
-            socket.on('connect', function () {
-                isConnected = true;
-                updateConnectionStatus('connected');
-                addLogEntry('Connected to dashboard server');
+        socket.on('stats_update', (data) => {
+            updateDashboard(data);
+        });
+
+        function updateDashboard(data) {
+            // Update Top Pills
+            document.getElementById('total-plays').textContent = data.total_plays.toLocaleString();
+            document.getElementById('active-guilds').textContent = data.active_guilds;
+            document.getElementById('recent-plays').textContent = data.recent_plays;
+
+            if (data.system) {
+                document.getElementById('cpu-usage').textContent = data.system.cpu + '%';
+                document.getElementById('ram-usage').textContent = data.system.memory + '%';
+            }
+
+            // Update Top Songs
+            const songsList = document.getElementById('top-songs-list');
+            songsList.innerHTML = '';
+
+            const sortedSongs = Object.entries(data.most_played)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 10); // Show top 10
+
+            sortedSongs.forEach(([song, count], index) => {
+                const li = document.createElement('li');
+                li.className = 'rank-item';
+                li.innerHTML = `
+                    <div class="rank-number">#${index + 1}</div>
+                    <div class="rank-details">
+                        <span class="song-title" title="${song}">${song}</span>
+                        <span class="play-count">${count} plays</span>
+                    </div>
+                `;
+                songsList.appendChild(li);
             });
 
-            socket.on('disconnect', function () {
-                isConnected = false;
-                updateConnectionStatus('disconnected');
-                addLogEntry('Disconnected from dashboard server');
-            });
-
-            socket.on('stats_update', function (data) {
-                updateStats(data.stats);
-                updateTimestamp(data.timestamp);
-                addLogEntry('Statistics updated');
-            });
-
-            socket.on('error', function (data) {
-                addLogEntry('Error: ' + data.message, 'error');
-            });
-        }
-
-        // Update statistics on the page
-        function updateStats(stats) {
-            // Update overview cards
-            document.getElementById('totalPlays').textContent = stats.total_plays?.toLocaleString() || '0';
-            document.getElementById('activeGuilds').textContent = stats.active_guilds || '0';
-            document.getElementById('recentPlays').textContent = stats.recent_plays || '0';
-
-            // Update memory usage
-            if (stats.memory_usage && stats.memory_usage.rss_mb) {
-                document.getElementById('memoryUsage').textContent = stats.memory_usage.rss_mb + ' MB';
+            // Update Top Listeners
+            const listenersList = document.getElementById('top-listeners-list');
+            if (data.analytics && data.analytics.top_listeners) {
+                listenersList.innerHTML = '';
+                data.analytics.top_listeners.forEach((listener, index) => {
+                    const li = document.createElement('li');
+                    li.className = 'rank-item';
+                    li.innerHTML = `
+                         <div class="rank-number">#${index + 1}</div>
+                         <div class="rank-details">
+                            <span class="song-title">${listener.name}</span>
+                            <span class="play-count">${listener.count} plays</span>
+                         </div>
+                    `;
+                    listenersList.appendChild(li);
+                });
             }
 
-            // Update most played songs
-            updateSongsList(stats.most_played || {});
-
-            // Update servers list
-            updateServersList(stats.servers || []);
-
-            // Update cache info
-            if (stats.cache_info) {
-                if (stats.cache_info.cached_at) {
-                    const cacheTime = new Date(stats.cache_info.cached_at);
-                    document.getElementById('cacheUpdate').textContent = cacheTime.toLocaleTimeString();
-                }
+            // Update Charts
+            if (data.analytics) {
+                updateCharts(data.analytics);
             }
 
-            // Update connected clients count
-            if (stats.connected_clients !== undefined) {
-                document.getElementById('connectedClients').textContent = stats.connected_clients;
+            // Update Server List & Selector
+            if (data.servers) {
+                allServers = data.servers;
+                updateServerTable(data.servers);
+                updateServerSelector(data.servers);
             }
         }
 
-        // Update connection status
-        function updateConnectionStatus(status) {
-            const statusElement = document.getElementById('connectionStatus');
-            const statusMap = {
-                'connecting': { icon: 'fa-circle-notch fa-spin', text: 'Connecting...', class: 'status-connecting' },
-                'connected': { icon: 'fa-circle', text: 'Connected', class: 'status-connected' },
-                'disconnected': { icon: 'fa-circle', text: 'Disconnected', class: 'status-disconnected' }
-            };
+        // Charts Logic
+        function updateCharts(analytics) {
+            // Activity Chart
+            const ctxActivity = document.getElementById('activityChart').getContext('2d');
+            const activityData = analytics.peak_activity || Array(24).fill(0);
 
-            const config = statusMap[status];
-            statusElement.className = `status-indicator ${config.class}`;
-            statusElement.innerHTML = `<i class="fas ${config.icon}"></i><span>${config.text}</span>`;
-        }
-
-        // Update timestamp
-        function updateTimestamp(timestamp) {
-            const date = new Date(timestamp);
-            document.getElementById('lastUpdate').textContent = date.toLocaleTimeString();
-        }
-
-        // Add log entry
-        function addLogEntry(message, type = 'info') {
-            const logsContainer = document.getElementById('logsContainer');
-            const timestamp = new Date().toLocaleTimeString();
-
-            const logEntry = document.createElement('div');
-            logEntry.className = `log-entry log-${type}`;
-            logEntry.innerHTML = `
-                <span class="log-timestamp">${timestamp}</span>
-                <span class="log-message">${message}</span>
-            `;
-
-            logsContainer.insertBefore(logEntry, logsContainer.firstChild);
-
-            // Keep only last 20 entries
-            const entries = logsContainer.children;
-            if (entries.length > 20) {
-                logsContainer.removeChild(entries[entries.length - 1]);
-            }
-        }
-
-        // Utility functions
-        function refreshStats() {
-            if (isConnected) {
-                socket.emit('request_stats');
-                addLogEntry('Manual refresh requested');
-
-                // Animate refresh button
-                const btn = document.getElementById('refreshBtn');
-                btn.style.transform = 'rotate(360deg)';
-                setTimeout(() => btn.style.transform = '', 500);
-            }
-        }
-
-        function toggleCard(cardId) {
-            const card = document.getElementById(cardId);
-            const button = card.parentElement.querySelector('.action-btn i');
-
-            if (card.style.display === 'none') {
-                card.style.display = 'block';
-                button.className = 'fas fa-chevron-up';
+            if (activityChart) {
+                activityChart.data.datasets[0].data = activityData;
+                activityChart.update();
             } else {
-                card.style.display = 'none';
-                button.className = 'fas fa-chevron-down';
+                activityChart = new Chart(ctxActivity, {
+                    type: 'line',
+                    data: {
+                        labels: [...Array(24).keys()].map(h => `${h}:00`),
+                        datasets: [{
+                            label: 'Plays per Hour',
+                            data: activityData,
+                            borderColor: '#8e44ad',
+                            backgroundColor: 'rgba(142, 68, 173, 0.2)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: '#333' } },
+                            x: { grid: { display: false } }
+                        }
+                    }
+                });
+            }
+
+            // Commands Chart (Pie/Doughnut)
+            const ctxCmd = document.getElementById('commandsChart').getContext('2d');
+            const cmdData = analytics.command_usage || {};
+            const labels = Object.keys(cmdData);
+            const values = Object.values(cmdData);
+
+            if (commandsChart) {
+                commandsChart.data.labels = labels;
+                commandsChart.data.datasets[0].data = values;
+                commandsChart.update();
+            } else {
+                commandsChart = new Chart(ctxCmd, {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: values,
+                            backgroundColor: [
+                                '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'
+                            ],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'right', labels: { color: '#fff' } }
+                        }
+                    }
+                });
             }
         }
 
-        function clearLogs() {
-            document.getElementById('logsContainer').innerHTML = '';
-            addLogEntry('Logs cleared');
+        // Server Table Logic
+        function updateServerTable(servers) {
+            const tbody = document.getElementById('servers-table-body');
+            const search = document.getElementById('server-search').value.toLowerCase();
+
+            tbody.innerHTML = '';
+
+            const filteredServers = servers.filter(s =>
+                s.guild_name.toLowerCase().includes(search) ||
+                s.guild_id.toString().includes(search)
+            );
+
+            filteredServers.forEach(server => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${server.guild_name}</td>
+                    <td><small>${server.guild_id}</small></td>
+                    <td>${server.total_plays}</td>
+                    <td>${server.command_count || 0}</td>
+                    <td>${new Date(server.last_updated).toLocaleDateString()}</td>
+                    <td>
+                        <button class="btn-xs" onclick="selectServerForControl('${server.guild_id}')">
+                            Select
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
         }
 
-        // Update servers list
-        function updateServersList(servers) {
-            const serversList = document.getElementById('serversList');
-            if (!serversList) return;
+        document.getElementById('server-search').addEventListener('input', () => {
+            updateServerTable(allServers);
+        });
 
-            if (servers.length === 0) {
-                serversList.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fas fa-server"></i>
-                        <p>No active servers</p>
-                    </div>
-                `;
+        // Remote Control Logic
+        const pinInput = document.getElementById('admin-pin');
+        const controlPanel = document.getElementById('control-actions');
+        const serverSelect = document.getElementById('control-server-select');
+
+        pinInput.addEventListener('input', (e) => {
+            if (e.target.value.length >= 4) {
+                controlPanel.classList.remove('disabled');
+            } else {
+                controlPanel.classList.add('disabled');
+            }
+        });
+
+        function updateServerSelector(servers) {
+            const currentVal = serverSelect.value;
+            // Only update options if empty or significantly different to avoid resetting selection
+
+            // Rebuild options but keep selection if valid
+            // Simple approach: clear and rebuild
+            serverSelect.innerHTML = '<option value="">Select a server...</option>';
+            servers.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.guild_id;
+                opt.textContent = s.guild_name;
+                serverSelect.appendChild(opt);
+            });
+
+            if (currentVal && Array.from(serverSelect.options).some(o => o.value == currentVal)) {
+                serverSelect.value = currentVal;
+            }
+        }
+
+        function selectServerForControl(guildId) {
+            document.querySelector('[data-tab="controls"]').click();
+            serverSelect.value = guildId;
+        }
+
+        async function sendAction(action) {
+            const pin = pinInput.value;
+            const guildId = serverSelect.value;
+            const feedback = document.getElementById('action-feedback');
+
+            if (!guildId) {
+                feedback.textContent = 'Please select a server first!';
+                feedback.className = 'error';
                 return;
             }
 
-            serversList.innerHTML = servers.map(server => `
-                <div class="server-item">
-                    <div class="server-icon">
-                        <i class="fas fa-server"></i>
-                    </div>
-                    <div class="server-info">
-                        <div class="server-name">${server.guild_name}</div>
-                        <div class="server-id">ID: ${server.guild_id}</div>
-                        <div class="server-stats">
-                            <span class="stat-badge">${server.total_plays} plays</span>
-                            <span class="stat-badge">${server.recent_plays} recent</span>
-                        </div>
-                    </div>
-                    <div class="server-status">
-                        <i class="fas fa-circle online"></i>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // Update songs list
-        function updateSongsList(mostPlayed) {
-            const songsList = document.getElementById('songsList');
-            if (!songsList) return;
-
-            if (Object.keys(mostPlayed).length === 0) {
-                songsList.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fas fa-music"></i>
-                        <p>No songs played yet</p>
-                    </div>
-                `;
+            if (!pin) {
+                feedback.textContent = 'Please enter PIN!';
+                feedback.className = 'error';
                 return;
             }
 
-            // Convert to array and sort - show ALL songs now
-            const songs = Object.entries(mostPlayed)
-                .sort((a, b) => b[1] - a[1]);
+            feedback.textContent = 'Sending...';
+            feedback.className = '';
 
-            const maxPlays = songs.length > 0 ? songs[0][1] : 1;
+            try {
+                const response = await fetch('/api/control', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pin, action, guild_id: guildId })
+                });
 
-            songsList.innerHTML = songs.map((song, index) => `
-                <div class="song-item">
-                    <div class="song-rank">${index + 1}</div>
-                    <div class="song-info">
-                        <div class="song-title">${song[0]}</div>
-                        <div class="song-plays">${song[1]} plays</div>
-                    </div>
-                    <div class="song-bar">
-                        <div class="song-progress" style="width: ${(song[1] / maxPlays * 100).toFixed(1)}%"></div>
-                    </div>
-                </div>
-            `).join('');
+                const data = await response.json();
+
+                if (data.success) {
+                    feedback.textContent = `Success: ${data.message}`;
+                    feedback.className = 'success';
+                } else {
+                    feedback.textContent = `Error: ${data.error}`;
+                    feedback.className = 'error';
+                }
+            } catch (err) {
+                feedback.textContent = 'Network Error';
+                feedback.className = 'error';
+            }
+
+            setTimeout(() => {
+                if (feedback.className === 'success') feedback.textContent = '';
+            }, 3000);
         }
+
+        // Navigation Tabs
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                // Remove active class
+                document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+                document.querySelectorAll('.view-section').forEach(view => view.classList.remove('active'));
+
+                // Add active class
+                item.classList.add('active');
+                const viewId = 'view-' + item.dataset.tab;
+                document.getElementById(viewId).classList.add('active');
+
+                // Update page title
+                document.querySelector('.page-title').textContent = item.textContent.trim();
+            });
+        });
     </script>
-
-    <style>
-        .info-notice {
-            background: #2d3748;
-            border-left: 4px solid #4299e1;
-            padding: 1rem;
-            border-radius: 4px;
-            margin: 1rem 0;
-        }
-
-        .info-notice p {
-            margin: 0.5rem 0;
-            color: #e2e8f0;
-        }
-
-        .info-notice ul {
-            margin: 0.5rem 0;
-            padding-left: 1.5rem;
-            color: #cbd5e0;
-        }
-
-        .info-notice li {
-            margin: 0.25rem 0;
-        }
-
-        /* Server List Styles */
-        .servers-list {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        .server-item {
-            display: flex;
-            align-items: center;
-            padding: 1rem;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: all 0.3s ease;
-        }
-
-        .server-item:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(255, 255, 255, 0.2);
-        }
-
-        .server-icon {
-            margin-right: 1rem;
-            color: #4299e1;
-            font-size: 1.25rem;
-        }
-
-        .server-info {
-            flex: 1;
-        }
-
-        .server-name {
-            font-weight: 600;
-            font-size: 1rem;
-            color: #e2e8f0;
-            margin-bottom: 0.25rem;
-        }
-
-        .server-id {
-            font-size: 0.8rem;
-            color: #a0aec0;
-            margin-bottom: 0.5rem;
-            font-family: 'Courier New', monospace;
-        }
-
-        .server-stats {
-            display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-        }
-
-        .stat-badge {
-            background: rgba(66, 153, 225, 0.2);
-            color: #4299e1;
-            padding: 0.2rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            font-weight: 500;
-        }
-
-        .server-status {
-            margin-left: 1rem;
-        }
-
-        .server-status .fa-circle.online {
-            color: #48bb78;
-            font-size: 0.75rem;
-        }
-    </style>
 </body>
 
 </html>

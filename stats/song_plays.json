@@ -2441,5 +2441,13 @@
     "guild_id": 727850028370231298,
     "timestamp": "2025-08-18T20:08:03.613607",
     "duration": 362
+  },
+  {
+    "title": "Test Song",
+    "requester_id": 987654321,
+    "guild_id": 123456789,
+    "timestamp": "2026-02-12T04:32:03.763082",
+    "duration": 180,
+    "requester_name": "Tester"
   }
 ]

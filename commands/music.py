@@ -190,7 +190,8 @@ class MusicCog(commands.Cog):
                             duration=entry.get('duration'),
                             thumbnail=entry.get('thumbnail'),
                             requester_id=user_id,
-                            is_lazy=True
+                            is_lazy=True,
+                            requester_name="Unknown" # Will be updated when actually played if we had context, but here we don't have ctx easily
                         ))
                 
                 return extracted_songs
@@ -385,6 +386,7 @@ class MusicCog(commands.Cog):
         
         # Clean up
         audio_manager.clear_queue(ctx.guild.id)
+        audio_manager.disable_autoplay(ctx.guild.id)
         audio_manager.cancel_alone_timer(ctx.guild.id)
         await ui_manager.cleanup_all_messages(ctx.guild.id)
         
@@ -742,13 +744,30 @@ async def play_current_song(ctx):
             # Start playback
             ctx.voice_client.play(source, after=after_playing)
             
+            # Get requester name
+            requester_name = "Unknown"
+            if current_song.requester_id:
+                try:
+                    member = ctx.guild.get_member(current_song.requester_id)
+                    if member:
+                        requester_name = member.display_name
+                    else:
+                        try:
+                            member = await ctx.guild.fetch_member(current_song.requester_id)
+                            requester_name = member.display_name
+                        except:
+                            pass
+                except:
+                    pass
+
             # Record song play in stats
             await stats_manager.record_song_play(
                 guild_id=guild_id,
                 title=current_song.title,
                 requester_id=current_song.requester_id,
                 duration=current_song.duration,
-                guild_name=ctx.guild.name
+                guild_name=ctx.guild.name,
+                requester_name=requester_name
             )
             
             # Record in listening history for recommendations
