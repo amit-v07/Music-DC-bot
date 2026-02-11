@@ -82,30 +82,26 @@ def handle_connect():
     emit('status', {'msg': 'Connected to dashboard backend'})
 
 # Background task to push updates
+import threading
+import time
+import asyncio
+
 def background_stats_update():
-    """Push stats updates to connected clients"""
+    """Background task to push stats to clients"""
     while True:
         try:
-            # Create a new event loop for this thread if needed
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            
-            # Fetch stats
-            stats = loop.run_until_complete(_fetch_fresh_stats())
+            # Fetch fresh stats
+            stats = asyncio.run(_fetch_fresh_stats())
             
             # Emit to all clients
             socketio.emit('stats_update', stats)
             
             # Sleep for 2 seconds
-            socketio.sleep(2)
+            time.sleep(2)
             
         except Exception as e:
             logger.error("dashboard_background_task", e)
-            socketio.sleep(5)
+            time.sleep(5)
 
 async def _fetch_fresh_stats():
     """Helper to fetch and format all stats"""
@@ -140,7 +136,10 @@ def run_dashboard():
     """Run the Flask-SocketIO server"""
     try:
         # Start background task
-        socketio.start_background_task(background_stats_update)
+        # Start background task
+        thread = threading.Thread(target=background_stats_update)
+        thread.daemon = True
+        thread.start()
         
         port = int(os.environ.get("PORT", 5000))
         logger.info(f"Starting dashboard on port {port}")
