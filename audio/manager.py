@@ -50,7 +50,9 @@ class AudioManager:
         self.guild_current_index: Dict[int, int] = {}
         self.guild_volumes: Dict[int, float] = {}
         self.repeat_flags: Dict[int, bool] = {}
+        self.repeat_flags: Dict[int, bool] = {}
         self.alone_timers: Dict[int, asyncio.Task] = {}
+        self.idle_timers: Dict[int, asyncio.Task] = {}
         
         # Autoplay state
         self.autoplay_enabled: Dict[int, bool] = {}
@@ -446,6 +448,61 @@ class AudioManager:
         
         self.alone_timers[guild_id] = asyncio.create_task(alone_timer())
     
+    async def start_idle_timer(self, ctx):
+        """Start timer to leave if bot stays idle (paused/empty queue)"""
+        guild = ctx.guild
+        guild_id = guild.id
+        
+        # Cancel existing timer
+        self.cancel_idle_timer(guild_id)
+        
+        async def idle_timer():
+            try:
+                logger.info(f"Starting idle timer for guild {guild_id} ({config.idle_timeout}s)")
+                await asyncio.sleep(config.idle_timeout)
+                
+                # Double check conditions
+                is_playing = ctx.voice_client and (ctx.voice_client.is_playing() or ctx.voice_client.is_paused())
+                queue = self.get_queue(guild_id)
+                
+                if not is_playing and not queue:
+                    # Find text channel to send message
+                    text_channel = ctx.channel
+                    
+                    # Disconnect and clean up
+                    if ctx.voice_client:
+                        await ctx.voice_client.disconnect()
+                    
+                    self.clear_queue(guild_id)
+                    self.cancel_alone_timer(guild_id)
+                    
+                    # Import ui_manager here to avoid circular dependency
+                    from ui.views import ui_manager
+                    await ui_manager.cleanup_all_messages(guild_id)
+                    
+                    if text_channel:
+                        await text_channel.send(
+                            "💤 Koi gaana nahi baj raha, main chali sone! Bye! 👋"
+                        )
+                    
+                    log_audio_event(guild_id, "auto_disconnect_idle")
+                    
+            except asyncio.CancelledError:
+                logger.info(f"Idle timer cancelled for guild {guild_id}")
+            except Exception as e:
+                logger.error("idle_timer", e, guild_id=guild_id)
+            finally:
+                self.idle_timers.pop(guild_id, None)
+        
+        self.idle_timers[guild_id] = asyncio.create_task(idle_timer())
+    
+    def cancel_idle_timer(self, guild_id: int):
+        """Cancel the idle timer"""
+        if guild_id in self.idle_timers:
+            self.idle_timers[guild_id].cancel()
+            self.idle_timers.pop(guild_id, None)
+            logger.info(f"Cancelled idle timer for guild {guild_id}")
+
     def cancel_alone_timer(self, guild_id: int):
         """Cancel the alone timer"""
         if guild_id in self.alone_timers:

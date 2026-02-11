@@ -110,6 +110,10 @@ class MusicCog(commands.Cog):
                 if ctx.voice_client and not ctx.voice_client.is_playing() and not ctx.voice_client.is_paused():
                     await play_current_song(ctx)
                 
+                # Active! Cancel any idle timers
+                audio_manager.cancel_idle_timer(ctx.guild.id)
+                audio_manager.cancel_alone_timer(ctx.guild.id)
+                
                 # Send feedback to user
                 song = songs[0]
                 if queue_position == 0:
@@ -861,19 +865,19 @@ async def handle_song_end(ctx):
                         reply_fail = await ai_brain.get_response("error", {"user": "System"})
                         await ctx.send(f"❌ {reply_fail} (No recommendations found)")
                         await ctx.send("🎵 Queue finished! Add more songs or I'll leave in 5 minutes if inactive.")
-                        asyncio.create_task(idle_disconnect(ctx))
+                        await audio_manager.start_idle_timer(ctx)
                         
                 except Exception as e:
                     logger.error("autoplay_activation", e, guild_id=guild_id)
                     await ctx.send("❌ Autoplay failed. Queue finished!")
-                    asyncio.create_task(idle_disconnect(ctx))
+                    await audio_manager.start_idle_timer(ctx)
             else:
                 # No autoplay - normal queue finish behavior
                 await ctx.send("🎵 Queue finished! Add more songs or I'll leave in 5 minutes if inactive.")
                 await ui_manager.update_all_ui(ctx)
                 
                 # Start idle timer
-                asyncio.create_task(idle_disconnect(ctx))
+                await audio_manager.start_idle_timer(ctx)
                 
             log_audio_event(guild_id, "queue_finished")
             
@@ -910,19 +914,7 @@ async def trigger_autoplay_buffer(ctx, guild_id):
 
 
 
-async def idle_disconnect(ctx):
-    """Disconnect after idle timeout if nothing is playing"""
-    await asyncio.sleep(config.idle_timeout)
-    
-    if (ctx.voice_client and 
-        not ctx.voice_client.is_playing() and 
-        not audio_manager.get_queue(ctx.guild.id)):
-        
-        await ctx.send("💤 Disconnecting due to inactivity. See you later!")
-        audio_manager.cancel_alone_timer(ctx.guild.id)
-        await ui_manager.cleanup_all_messages(ctx.guild.id)
-        await ctx.voice_client.disconnect()
-        log_audio_event(ctx.guild.id, "idle_disconnect")
+
 
 
 async def setup(bot):
