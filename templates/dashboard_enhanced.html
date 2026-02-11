@@ -1,15 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Music Bot - Enhanced Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='dashboard_enhanced.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
     <div class="dashboard">
         <!-- Header -->
@@ -17,7 +20,7 @@
             <div class="header-content">
                 <div class="header-left">
                     <h1><i class="fas fa-music"></i> Music Bot</h1>
-                                                <span class="version">Enhanced Dashboard v2.1 (JSON Stats)</span>
+                    <span class="version">Enhanced Dashboard v2.1 (JSON Stats)</span>
                 </div>
                 <div class="header-right">
                     <div class="status-indicator" id="connectionStatus">
@@ -43,7 +46,8 @@
                         <div class="stat-content">
                             <h3>Total Plays</h3>
                             <p class="stat-number" id="totalPlays">{{ stats.get('total_plays', 0) | int }}</p>
-                            <span class="stat-change">+<span id="recentPlays">{{ stats.get('recent_plays', 0) }}</span> today</span>
+                            <span class="stat-change">+<span id="recentPlays">{{ stats.get('recent_plays', 0) }}</span>
+                                today</span>
                         </div>
                     </div>
 
@@ -149,29 +153,29 @@
                         <div class="card-content" id="activeServers">
                             <div class="servers-list" id="serversList">
                                 {% if stats.get('servers') %}
-                                    {% for server in stats.servers %}
-                                    <div class="server-item">
-                                        <div class="server-icon">
-                                            <i class="fas fa-server"></i>
-                                        </div>
-                                        <div class="server-info">
-                                            <div class="server-name">{{ server.guild_name }}</div>
-                                            <div class="server-id">ID: {{ server.guild_id }}</div>
-                                            <div class="server-stats">
-                                                <span class="stat-badge">{{ server.total_plays }} plays</span>
-                                                <span class="stat-badge">{{ server.recent_plays }} recent</span>
-                                            </div>
-                                        </div>
-                                        <div class="server-status">
-                                            <i class="fas fa-circle online"></i>
-                                        </div>
-                                    </div>
-                                    {% endfor %}
-                                {% else %}
-                                    <div class="empty-state">
+                                {% for server in stats.servers %}
+                                <div class="server-item">
+                                    <div class="server-icon">
                                         <i class="fas fa-server"></i>
-                                        <p>No active servers</p>
                                     </div>
+                                    <div class="server-info">
+                                        <div class="server-name">{{ server.guild_name }}</div>
+                                        <div class="server-id">ID: {{ server.guild_id }}</div>
+                                        <div class="server-stats">
+                                            <span class="stat-badge">{{ server.total_plays }} plays</span>
+                                            <span class="stat-badge">{{ server.recent_plays }} recent</span>
+                                        </div>
+                                    </div>
+                                    <div class="server-status">
+                                        <i class="fas fa-circle online"></i>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                                {% else %}
+                                <div class="empty-state">
+                                    <i class="fas fa-server"></i>
+                                    <p>No active servers</p>
+                                </div>
                                 {% endif %}
                             </div>
                         </div>
@@ -190,23 +194,25 @@
                         <div class="card-content" id="topSongs">
                             <div class="songs-list" id="songsList">
                                 {% if stats.get('most_played') %}
-                                    {% for song, count in stats.most_played.items() %}
-                                    <div class="song-item">
-                                        <div class="song-rank">{{ loop.index }}</div>
-                                        <div class="song-info">
-                                            <div class="song-title">{{ song }}</div>
-                                            <div class="song-plays">{{ count }} plays</div>
-                                        </div>
-                                        <div class="song-bar">
-                                            <div class="song-progress" style="width: {{ (count / stats.most_played.values() | list | max * 100) | round(1) }}%"></div>
+                                {% for song, count in stats.most_played.items() %}
+                                <div class="song-item">
+                                    <div class="song-rank">{{ loop.index }}</div>
+                                    <div class="song-info">
+                                        <div class="song-title">{{ song }}</div>
+                                        <div class="song-plays">{{ count }} plays</div>
+                                    </div>
+                                    <div class="song-bar">
+                                        <div class="song-progress"
+                                            style="width: {{ (count / stats.most_played.values() | list | max * 100) | round(1) }}%">
                                         </div>
                                     </div>
-                                    {% endfor %}
+                                </div>
+                                {% endfor %}
                                 {% else %}
-                                    <div class="empty-state">
-                                        <i class="fas fa-music"></i>
-                                        <p>No songs played yet</p>
-                                    </div>
+                                <div class="empty-state">
+                                    <i class="fas fa-music"></i>
+                                    <p>No songs played yet</p>
+                                </div>
                                 {% endif %}
                             </div>
                         </div>
@@ -234,7 +240,7 @@
         let isConnected = false;
 
         // Initialize dashboard
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             initializeSocket();
             updateConnectionStatus('connecting');
         });
@@ -243,25 +249,25 @@
         function initializeSocket() {
             socket = io();
 
-            socket.on('connect', function() {
+            socket.on('connect', function () {
                 isConnected = true;
                 updateConnectionStatus('connected');
                 addLogEntry('Connected to dashboard server');
             });
 
-            socket.on('disconnect', function() {
+            socket.on('disconnect', function () {
                 isConnected = false;
                 updateConnectionStatus('disconnected');
                 addLogEntry('Disconnected from dashboard server');
             });
 
-            socket.on('stats_update', function(data) {
+            socket.on('stats_update', function (data) {
                 updateStats(data.stats);
                 updateTimestamp(data.timestamp);
                 addLogEntry('Statistics updated');
             });
 
-            socket.on('error', function(data) {
+            socket.on('error', function (data) {
                 addLogEntry('Error: ' + data.message, 'error');
             });
         }
@@ -322,7 +328,7 @@
         function addLogEntry(message, type = 'info') {
             const logsContainer = document.getElementById('logsContainer');
             const timestamp = new Date().toLocaleTimeString();
-            
+
             const logEntry = document.createElement('div');
             logEntry.className = `log-entry log-${type}`;
             logEntry.innerHTML = `
@@ -344,7 +350,7 @@
             if (isConnected) {
                 socket.emit('request_stats');
                 addLogEntry('Manual refresh requested');
-                
+
                 // Animate refresh button
                 const btn = document.getElementById('refreshBtn');
                 btn.style.transform = 'rotate(360deg)';
@@ -355,7 +361,7 @@
         function toggleCard(cardId) {
             const card = document.getElementById(cardId);
             const button = card.parentElement.querySelector('.action-btn i');
-            
+
             if (card.style.display === 'none') {
                 card.style.display = 'block';
                 button.className = 'fas fa-chevron-up';
@@ -440,7 +446,7 @@
             `).join('');
         }
     </script>
-    
+
     <style>
         .info-notice {
             background: #2d3748;
@@ -449,18 +455,18 @@
             border-radius: 4px;
             margin: 1rem 0;
         }
-        
+
         .info-notice p {
             margin: 0.5rem 0;
             color: #e2e8f0;
         }
-        
+
         .info-notice ul {
             margin: 0.5rem 0;
             padding-left: 1.5rem;
             color: #cbd5e0;
         }
-        
+
         .info-notice li {
             margin: 0.25rem 0;
         }
@@ -536,4 +542,5 @@
         }
     </style>
 </body>
-</html> 
+
+</html>

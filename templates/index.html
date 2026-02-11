@@ -1,12 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Music Bot Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -24,12 +27,12 @@
                 <h2>Most Played Songs</h2>
                 <ul class="song-list">
                     {% for song, count in stats.most_played_sorted[:10] %}
-                        <li>
-                            <span class="song-title">{{ song }}</span>
-                            <span class="play-count">{{ count }} plays</span>
-                        </li>
+                    <li>
+                        <span class="song-title">{{ song }}</span>
+                        <span class="play-count">{{ count }} plays</span>
+                    </li>
                     {% else %}
-                        <li>No songs have been played yet.</li>
+                    <li>No songs have been played yet.</li>
                     {% endfor %}
                 </ul>
             </div>
@@ -37,23 +40,23 @@
             <div class="card">
                 <h2>Current Queues</h2>
                 {% for guild, queue in stats.guild_queues.items() %}
-                    <div class="guild-queue">
-                        <h3>Guild ID: {{ guild }}</h3>
-                        {% if queue %}
-                            <ul class="song-list">
-                                {% for song in queue %}
-                                    <li>{{ song }}</li>
-                                {% endfor %}
-                            </ul>
-                            <div class="pagination">
-                                <!-- Pagination controls will be inserted here by JavaScript -->
-                            </div>
-                        {% else %}
-                            <p>The queue is empty.</p>
-                        {% endif %}
+                <div class="guild-queue">
+                    <h3>Guild ID: {{ guild }}</h3>
+                    {% if queue %}
+                    <ul class="song-list">
+                        {% for song in queue %}
+                        <li>{{ song }}</li>
+                        {% endfor %}
+                    </ul>
+                    <div class="pagination">
+                        <!-- Pagination controls will be inserted here by JavaScript -->
                     </div>
+                    {% else %}
+                    <p>The queue is empty.</p>
+                    {% endif %}
+                </div>
                 {% else %}
-                    <p>No active queues.</p>
+                <p>No active queues.</p>
                 {% endfor %}
             </div>
         </div>
@@ -63,7 +66,7 @@
         </footer>
     </div>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             const itemsPerPage = 5;
 
             document.querySelectorAll('.guild-queue').forEach(guildQueue => {
@@ -123,4 +126,5 @@
         });
     </script>
 </body>
-</html> 
+
+</html>
