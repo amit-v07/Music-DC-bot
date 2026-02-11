@@ -101,11 +101,11 @@ def background_stats_update():
             socketio.emit('stats_update', stats)
             
             # Sleep for 2 seconds
-            eventlet.sleep(2)
+            socketio.sleep(2)
             
         except Exception as e:
             logger.error("dashboard_background_task", e)
-            eventlet.sleep(5)
+            socketio.sleep(5)
 
 async def _fetch_fresh_stats():
     """Helper to fetch and format all stats"""
