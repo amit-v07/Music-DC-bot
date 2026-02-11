@@ -19,6 +19,7 @@ Flask-SocketIO>=5.3.4
 gunicorn>=21.2.0
 gevent>=23.9.1
 gevent-websocket>=0.10.1
+eventlet>=0.33.3
 
 
 # System Monitoring (Optional)

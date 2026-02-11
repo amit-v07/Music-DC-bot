@@ -24,6 +24,7 @@ class Song:
     duration: Optional[int] = None
     thumbnail: Optional[str] = None
     requester_id: int = 0
+    requester_name: str = "Unknown"
     is_lazy: bool = False
     added_at: datetime = field(default_factory=datetime.now)
     
