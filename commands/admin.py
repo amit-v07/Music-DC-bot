@@ -181,34 +181,73 @@ class AdminCog(commands.Cog):
     @commands.command()
     @is_bot_owner()
     async def broadcast(self, ctx, *, message: str):
-        """Send a message to all servers (Bot Owner only)"""
+        """
+        Send a message to all servers (Bot Owner only)
+        Usage: !broadcast [optional: #channel_name] <message>
+        Example: !broadcast #general Hello everyone!
+        """
         log_command_usage(ctx, "broadcast")
         
         try:
+            target_channel_name = None
+            content = message
+            
+            # Check if a specific channel is targeted
+            if message.startswith("#"):
+                parts = message.split(" ", 1)
+                if len(parts) > 1:
+                    target_channel_name = parts[0][1:]  # Remove the #
+                    content = parts[1]
+            
             sent = 0
             failed = 0
             
+            status_msg = await ctx.send(f"📢 Broadcasting to {len(self.bot.guilds)} servers...")
+            
             for guild in self.bot.guilds:
                 try:
-                    # Find the first text channel we can send to
-                    for channel in guild.text_channels:
-                        if channel.permissions_for(guild.me).send_messages:
-                            embed = discord.Embed(
-                                title="📢 Bot Announcement",
-                                description=message,
-                                color=0x9B59B6
-                            )
-                            embed.set_footer(text=f"Sent from {ctx.guild.name}")
-                            await channel.send(embed=embed)
-                            sent += 1
-                            break
+                    target_channel = None
+                    
+                    # 1. Try to find the specific channel if requested
+                    if target_channel_name:
+                        target_channel = discord.utils.get(guild.text_channels, name=target_channel_name)
+                    
+                    # 2. If not found or not requested, find first available channel
+                    if not target_channel:
+                        # Try system channel first
+                        if guild.system_channel and guild.system_channel.permissions_for(guild.me).send_messages:
+                            target_channel = guild.system_channel
+                        else:
+                            # Find first sendable channel
+                            for channel in guild.text_channels:
+                                if channel.permissions_for(guild.me).send_messages:
+                                    target_channel = channel
+                                    break
+                    
+                    if target_channel and target_channel.permissions_for(guild.me).send_messages:
+                        embed = discord.Embed(
+                            title="📢 Bot Announcement",
+                            description=content,
+                            color=0x9B59B6
+                        )
+                        embed.set_footer(text=f"Sent from {ctx.guild.name} • Dev: {ctx.author.name}")
+                        await target_channel.send(embed=embed)
+                        sent += 1
+                    else:
+                        failed += 1
+                        
                 except Exception as e:
                     logger.error(f"broadcast_to_{guild.id}", e)
                     failed += 1
+                
+                # Small delay to avoid rate limits
+                if sent % 5 == 0:
+                    await asyncio.sleep(1)
             
-            await ctx.send(f"✅ **Broadcast complete!**\n"
+            await status_msg.edit(content=f"✅ **Broadcast complete!**\n"
                           f"Sent to: {sent} servers\n"
-                          f"Failed: {failed} servers")
+                          f"Failed: {failed} servers\n"
+                          f"Target Channel: {target_channel_name if target_channel_name else 'Auto'}")
             
         except Exception as e:
             logger.error("broadcast_command", e)

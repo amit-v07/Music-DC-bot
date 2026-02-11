@@ -334,7 +334,7 @@ async def help_command(ctx):
             "• Supports YouTube links, playlists, and Spotify URLs\n"
             "• Auto-leave if alone for 1 minute\n"
             "• Queue supports hundreds of songs!\n"
-            "• AI-powered Hinglish responses! 🎉"
+            "• AI-powered funny responses! 🎉"
         ),
         inline=False
     )
