@@ -344,21 +344,32 @@ class MusicCog(commands.Cog):
     
     @commands.command()
     async def stop(self, ctx):
-        """Stop playback and clear the queue"""
+        """Stop playback, clear queue, and disable autoplay"""
         log_command_usage(ctx, "stop")
         
         if not ctx.voice_client:
             await ctx.send("❌ Arre, main toh kisi voice channel mein hi nahi hoon!")
             return
         
+        # 1. Clear Queue
         audio_manager.clear_queue(ctx.guild.id)
         
+        # 2. Disable Autoplay
+        audio_manager.disable_autoplay(ctx.guild.id)
+        
+        # 3. Stop Playback
         if ctx.voice_client.is_playing() or ctx.voice_client.is_paused():
             ctx.voice_client.stop()
         
         # AI Response
         reply = await ai_brain.get_response("stop", {"user": ctx.author.display_name})
-        await ctx.send(f"⏹️ {reply}")
+        
+        # Send comprehensive status message
+        await ctx.send(
+            f"⏹️ **Stopped!** {reply}\n"
+            "🗑️ Queue cleared.\n"
+            "⏸️ Autoplay disabled."
+        )
         
         await ui_manager.update_all_ui(ctx)
         log_audio_event(ctx.guild.id, "stopped")
