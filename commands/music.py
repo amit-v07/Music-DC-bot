@@ -359,7 +359,7 @@ class MusicCog(commands.Cog):
         await ui_manager.update_all_ui(ctx)
         log_audio_event(ctx.guild.id, "stopped")
     
-    @commands.command()
+    @commands.command(aliases=['bye', 'exit', 'quit', 'dc', 'disconnect', 'out'])
     async def leave(self, ctx):
         """Leave the voice channel"""
         log_command_usage(ctx, "leave")
@@ -518,7 +518,7 @@ class MusicCog(commands.Cog):
         await ctx.send(f"🔊 Volume set to **{vol}** (session only)")
         log_audio_event(ctx.guild.id, "volume_changed", str(vol))
     
-    @commands.command(aliases=['cleanup', 'clean'])
+    @commands.command(aliases=['cleanup', 'clean', 'clear'])
     async def cleanqueue(self, ctx):
         """Remove invalid/broken songs from the queue"""
         log_command_usage(ctx, "cleanqueue")

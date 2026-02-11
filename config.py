@@ -11,6 +11,7 @@ class BotConfig:
     """Main bot configuration"""
     # Discord settings
     discord_token: str
+    owner_id: Optional[int] = None
     default_prefix: str = '!'
     
     # Audio settings
@@ -97,6 +98,7 @@ def load_config() -> BotConfig:
     
     return BotConfig(
         discord_token=discord_token,
+        owner_id=int(os.getenv('OWNER_ID')) if os.getenv('OWNER_ID') else None,
         # Support both SPOTIFY_* and SPOTIPY_* env var names for compatibility
         spotify_client_id=(os.getenv('SPOTIFY_CLIENT_ID') or os.getenv('SPOTIPY_CLIENT_ID')),
         spotify_client_secret=(os.getenv('SPOTIFY_CLIENT_SECRET') or os.getenv('SPOTIPY_CLIENT_SECRET')),

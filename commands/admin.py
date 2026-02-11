@@ -16,6 +16,18 @@ class AdminCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    async def cog_check(self, ctx):
+        """Global check for admin cog commands"""
+        return True
+
+    def is_bot_owner():
+        """Custom check for bot owner"""
+        async def predicate(ctx):
+            if ctx.author.id == config.owner_id:
+                return True
+            return await ctx.bot.is_owner(ctx.author)
+        return commands.check(predicate)
+
     @commands.command()
     @commands.has_permissions(administrator=True)
     async def setprefix(self, ctx, prefix: str):
@@ -167,7 +179,7 @@ class AdminCog(commands.Cog):
             await ctx.send("❌ Failed to clear queue. Please try again.")
 
     @commands.command()
-    @commands.is_owner()
+    @is_bot_owner()
     async def broadcast(self, ctx, *, message: str):
         """Send a message to all servers (Bot Owner only)"""
         log_command_usage(ctx, "broadcast")
@@ -203,7 +215,7 @@ class AdminCog(commands.Cog):
             await ctx.send("❌ Failed to broadcast message.")
 
     @commands.command()
-    @commands.is_owner()
+    @is_bot_owner()
     async def servers(self, ctx):
         """List all servers the bot is in (Bot Owner only)"""
         log_command_usage(ctx, "servers")
@@ -304,7 +316,7 @@ class AdminCog(commands.Cog):
 
     @broadcast.error
     async def broadcast_error(self, ctx, error):
-        if isinstance(error, commands.NotOwner):
+        if isinstance(error, (commands.NotOwner, commands.CheckFailure)):
             await ctx.send("❌ Only the bot owner can use this command!")
         elif isinstance(error, commands.MissingRequiredArgument):
             await ctx.send("❌ Please provide a message to broadcast!\nUsage: `!broadcast <message>`")
@@ -314,7 +326,7 @@ class AdminCog(commands.Cog):
 
     @servers.error
     async def servers_error(self, ctx, error):
-        if isinstance(error, commands.NotOwner):
+        if isinstance(error, (commands.NotOwner, commands.CheckFailure)):
             await ctx.send("❌ Only the bot owner can use this command!")
         else:
             logger.error("servers_error", error)

@@ -281,7 +281,7 @@ async def help_command(ctx):
             "`pause` — Pause current song\n"
             "`resume` — Resume playback\n"
             "`stop` — Stop and clear queue\n"
-            "`leave` — Leave voice channel\n"
+            "`leave` (aliases: `bye`, `dc`, `out`) — Leave voice channel\n"
             "`nowplaying` — Show current song with controls"
         ),
         inline=False
@@ -298,7 +298,7 @@ async def help_command(ctx):
             "`repeat` — Toggle repeat current song\n"
             "`remove <number>` — Remove song from queue\n"
             "`move <from> <to>` — Move song position\n"
-            "`clear` (aliases: `cleanup`, `clean`) — Clear entire queue"
+            "`clear` (aliases: `cleanup`, `clean`) — Remove invalid songs from queue"
         ),
         inline=False
     )
@@ -308,23 +308,23 @@ async def help_command(ctx):
         name="🤖 **Smart Features**",
         value=(
             "`autoplay [on/off]` (aliases: `ap`, `auto`) — Auto-add songs when queue ends\n"
-            "`volume <0.1-2.0>` — Set playback volume\n"
+            "`volume <0.1-2.0>` (alias: `vol`) — Set playback volume\n"
             "`stats` — Show server music statistics"
         ),
         inline=False
     )
     
-    # Admin Commands
-    embed.add_field(
-        name="🔧 **Admin Commands**",
-        value=(
-            "`forceleave` — Force disconnect bot\n"
-            "`broadcast <message>` — Send message to all servers\n"
-            "`servers` — List all connected servers\n"
-            "`resetstats` — Reset server statistics"
-        ),
-        inline=False
-    )
+    # # Admin Commands
+    # embed.add_field(
+    #     name="🔧 **Admin Commands**",
+    #     value=(
+    #         "`forceleave` — Force disconnect bot\n"
+    #         "`broadcast <message>` — Send message to all servers\n"
+    #         "`servers` — List all connected servers\n"
+    #         "`resetstats` — Reset server statistics"
+    #     ),
+    #     inline=False
+    # )
     
     embed.add_field(
         name="💡 **Tips**",
