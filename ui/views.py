@@ -370,6 +370,11 @@ class UIManager:
                 color=0x2b2d31
             )
             
+            # Autoplay Tip above the embed
+            is_autoplay = audio_manager.is_autoplay_enabled(guild_id)
+            ap_status = "ON 🔥" if is_autoplay else "OFF 💤"
+            tip_content = f"**Tip:** Want non-stop music? Type `!ap` to toggle Autoplay! (Current: {ap_status})"
+            
             if current_song.thumbnail:
                 embed.set_thumbnail(url=current_song.thumbnail)
             
@@ -393,7 +398,7 @@ class UIManager:
             embed.set_footer(text=f"Autoplay: {ap_status} {ap_icon} • Type !ap or !auto to automatically play related songs!")
             
             view = NowPlayingView(ctx)
-            message = await ctx.send(embed=embed, view=view)
+            message = await ctx.send(content=tip_content, embed=embed, view=view)
             if guild_id not in self.ui_messages:
                 self.ui_messages[guild_id] = {}
             self.ui_messages[guild_id]['now_playing'] = message
