@@ -466,9 +466,16 @@ class AudioManager:
                 queue = self.get_queue(guild_id)
                 
                 if not is_playing and not queue:
-                    # Find text channel to send message
+                    # Find text channel to send message (prefer ctx channel, fallback to system)
                     text_channel = ctx.channel
-                    
+                    if not text_channel or not text_channel.permissions_for(guild.me).send_messages:
+                        text_channel = guild.system_channel
+                        if not text_channel:
+                            for channel in guild.text_channels:
+                                if channel.permissions_for(guild.me).send_messages:
+                                    text_channel = channel
+                                    break
+
                     # Disconnect and clean up
                     if ctx.voice_client:
                         await ctx.voice_client.disconnect()
@@ -481,9 +488,12 @@ class AudioManager:
                     await ui_manager.cleanup_all_messages(guild_id)
                     
                     if text_channel:
-                        await text_channel.send(
-                            "💤 Koi gaana nahi baj raha, main chali sone! Bye! 👋"
-                        )
+                        try:
+                            await text_channel.send(
+                                "💤 **Idle Timeout** | Quite der se kuch nahi baja, isliye main ja rahi hoon. Business hai mera! 👋"
+                            )
+                        except Exception:
+                            pass
                     
                     log_audio_event(guild_id, "auto_disconnect_idle")
                     

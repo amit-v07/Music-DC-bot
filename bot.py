@@ -279,7 +279,7 @@ async def help_command(ctx):
             "`join` — Join your voice channel\n"
             "`play <song/URL>` (alias: `p`) — Play music\n"
             "`pause` — Pause current song\n"
-            "`resume` — Resume playback\n"
+            "`resume` (alias: `start`) — Resume playback\n"
             "`stop` — Stop and clear queue\n"
             "`leave` (aliases: `bye`, `dc`, `out`) — Leave voice channel\n"
             "`nowplaying` — Show current song with controls"

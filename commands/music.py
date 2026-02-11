@@ -300,7 +300,7 @@ class MusicCog(commands.Cog):
         else:
             await ctx.send("❌ Kuch baj hi nahi raha hai, kya pause karun?")
     
-    @commands.command()
+    @commands.command(aliases=['start'])
     async def resume(self, ctx):
         """Resume the current song"""
         log_command_usage(ctx, "resume")
