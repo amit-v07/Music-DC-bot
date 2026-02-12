@@ -34,13 +34,13 @@ def index():
     return render_template('dashboard_enhanced.html')
 
 @app.route('/api/stats')
-async def get_stats():
+def get_stats():
     """API endpoint for raw stats"""
-    stats = await stats_manager.get_global_stats()
+    stats = asyncio.run(stats_manager.get_global_stats())
     return jsonify(stats)
 
 @app.route('/api/control', methods=['POST'])
-async def remote_control():
+def remote_control():
     """API endpoint for remote control actions"""
     data = request.json
     pin = data.get('pin')
@@ -54,7 +54,7 @@ async def remote_control():
         return jsonify({'success': False, 'error': 'Missing action or guild_id'}), 400
         
     try:
-        success = await stats_manager.queue_action(int(guild_id), action)
+        success = asyncio.run(stats_manager.queue_action(int(guild_id), action))
         if success:
             return jsonify({'success': True, 'message': f'Action {action} queued'})
         else:
@@ -135,12 +135,6 @@ async def _fetch_fresh_stats():
 def run_dashboard():
     """Run the Flask-SocketIO server"""
     try:
-        # Start background task
-        # Start background task
-        thread = threading.Thread(target=background_stats_update)
-        thread.daemon = True
-        thread.start()
-        
         port = int(os.environ.get("PORT", 5000))
         logger.info(f"Starting dashboard on port {port}")
         
@@ -150,6 +144,13 @@ def run_dashboard():
     except Exception as e:
         logger.error("dashboard_server", e)
         raise
+
+# Start background stats update thread at module level
+# This ensures it runs even when imported by Gunicorn
+thread = threading.Thread(target=background_stats_update)
+thread.daemon = True
+thread.start()
+logger.info("Background stats update thread started")
 
 if __name__ == "__main__":
     run_dashboard()

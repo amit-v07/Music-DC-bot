@@ -626,7 +626,7 @@ class MusicCog(commands.Cog):
                     recommendations = await audio_manager.get_autoplay_recommendations(guild_id, count=5)
                     
                     if recommendations:
-                        # Add to queue
+                        # Add to queue (this sets current_index to 0 since queue was empty)
                         audio_manager.add_songs(guild_id, recommendations)
                         
                         # Join voice channel if not already in one
@@ -634,13 +634,10 @@ class MusicCog(commands.Cog):
                             if ctx.author.voice:
                                 await ctx.author.voice.channel.connect()
                             else:
-                                await ctx.send("❌ Pehle voice channel mein aao! Main kaise bajau? 🤷")
+                                await ctx.send("❌ Pehle voice channel mein aao! Main kaise bajau! 🤷")
                                 return
                         
-                        # Move to first song
-                        audio_manager.next_song(guild_id)
-                        
-                        # Start playing
+                        # Start playing (current_index is already 0, no need to call next_song)
                         await play_current_song(ctx)
                         
                         # AI Response
@@ -873,13 +870,10 @@ async def handle_song_end(ctx):
                     recommendations = await audio_manager.get_autoplay_recommendations(guild_id, count=5)
                     
                     if recommendations:
-                        # Add to queue
+                        # Add to queue (this sets current_index to 0 since queue was empty)
                         audio_manager.add_songs(guild_id, recommendations)
                         
-                        # Move to next song (first recommendation)
-                        audio_manager.next_song(guild_id)
-                        
-                        # Start playing first recommendation
+                        # Start playing first recommendation (already at index 0, no need to call next_song)
                         await play_current_song(ctx)
                         
                         # AI Response for adding songs
