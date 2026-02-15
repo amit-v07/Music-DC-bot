@@ -64,6 +64,11 @@ class StatsManager:
         if not os.path.exists(self.stats_dir):
             os.makedirs(self.stats_dir)
     
+    def set_bot(self, bot):
+        """Set bot instance for accessing guild information"""
+        self.bot = bot
+        logger.info("Bot instance set in stats_manager")
+    
     async def record_song_play(self, guild_id: int, title: str, requester_id: int, duration: int = None, guild_name: str = None, requester_name: str = "Unknown"):
         """Record a song play"""
         async with self._lock:
@@ -232,22 +237,52 @@ class StatsManager:
             return 0
     
     async def get_all_servers(self) -> List[Dict]:
-        """Get information about all servers"""
+        """Get information about all servers the bot is in"""
         try:
             servers = []
             
-            # Use cached stats
-            for guild_id, stats in self._server_stats_cache.items():
-                guild_name = stats.get('guild_name', 'Unknown Server')
-                
-                servers.append({
-                    'guild_id': int(guild_id),
-                    'guild_name': guild_name,
-                    'total_plays': stats.get('total_plays', 0),
-                    'recent_plays': stats.get('recent_plays', 0),
-                    'last_updated': stats.get('last_updated', ''),
-                    'command_count': sum(stats.get('command_usage', {}).values())
-                })
+            # Get bot instance to access all guilds
+            bot = getattr(self, 'bot', None)
+            
+            if bot:
+                # Include ALL guilds the bot is in
+                for guild in bot.guilds:
+                    guild_id_str = str(guild.id)
+                    
+                    # Check if we have stats for this guild
+                    if guild_id_str in self._server_stats_cache:
+                        stats = self._server_stats_cache[guild_id_str]
+                        servers.append({
+                            'guild_id': guild.id,
+                            'guild_name': guild.name,
+                            'total_plays': stats.get('total_plays', 0),
+                            'recent_plays': stats.get('recent_plays', 0),
+                            'last_updated': stats.get('last_updated', ''),
+                            'command_count': sum(stats.get('command_usage', {}).values())
+                        })
+                    else:
+                        # Guild exists but has no stats yet
+                        servers.append({
+                            'guild_id': guild.id,
+                            'guild_name': guild.name,
+                            'total_plays': 0,
+                            'recent_plays': 0,
+                            'last_updated': datetime.now().isoformat(),
+                            'command_count': 0
+                        })
+            else:
+                # Fallback: only show servers with play history (old behavior)
+                for guild_id, stats in self._server_stats_cache.items():
+                    guild_name = stats.get('guild_name', 'Unknown Server')
+                    
+                    servers.append({
+                        'guild_id': int(guild_id),
+                        'guild_name': guild_name,
+                        'total_plays': stats.get('total_plays', 0),
+                        'recent_plays': stats.get('recent_plays', 0),
+                        'last_updated': stats.get('last_updated', ''),
+                        'command_count': sum(stats.get('command_usage', {}).values())
+                    })
             
             # Sort by total plays (most active first)
             servers.sort(key=lambda x: x['total_plays'], reverse=True)

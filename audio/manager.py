@@ -590,19 +590,44 @@ class AudioManager:
                 logger.warning(f"No listening history found for guild {guild_id}")
                 return []
             
-            # Get recommendations
+            # Get current queue to avoid duplicates
+            queue = self.get_queue(guild_id)
+            
+            # Create set of titles and URLs already in queue for fast lookup
+            existing_titles = {song.title.lower() for song in queue if song.title}
+            existing_urls = {song.webpage_url for song in queue if song.webpage_url}
+            
+            # Also track the current/last playing song URL to avoid re-adding it
+            current_song = self.get_current_song(guild_id)
+            if current_song and current_song.webpage_url:
+                existing_urls.add(current_song.webpage_url)
+            if current_song and current_song.original_url:
+                existing_urls.add(current_song.original_url)
+            
+            # Fetch more recommendations than needed to account for filtering
+            fetch_count = min(count * 3, 15)  # Fetch 3x what we need, max 15
             recommendations = await recommendation_manager.get_next_recommendations(
                 last_url,
-                count=count
+                count=fetch_count
             )
             
             if not recommendations:
                 logger.warning(f"No recommendations returned for guild {guild_id}")
                 return []
             
-            # Convert RecommendedSong to Song objects
+            # Filter out duplicates and convert to Song objects
             songs = []
             for rec in recommendations:
+                # Skip if URL or title already exists in queue
+                if rec.video_url in existing_urls:
+                    logger.info(f"Skipping duplicate URL: {rec.title}")
+                    continue
+                
+                if rec.title.lower() in existing_titles:
+                    logger.info(f"Skipping duplicate title: {rec.title}")
+                    continue
+                
+                # Add to result
                 song = Song(
                     title=rec.title,
                     webpage_url=rec.video_url,
@@ -612,8 +637,16 @@ class AudioManager:
                     is_lazy=True  # Will be resolved when played
                 )
                 songs.append(song)
+                
+                # Also add to existing sets to avoid dupes within this batch
+                existing_urls.add(rec.video_url)
+                existing_titles.add(rec.title.lower())
+                
+                # Stop once we have enough unique songs
+                if len(songs) >= count:
+                    break
             
-            logger.info(f"Generated {len(songs)} autoplay recommendations for guild {guild_id}")
+            logger.info(f"Generated {len(songs)} unique autoplay recommendations for guild {guild_id}")
             return songs
             
         except Exception as e:

@@ -39,6 +39,9 @@ class MusicBot(commands.Bot):
             await self.load_extension('commands.music')
             await self.load_extension('commands.admin')
             
+            # Set bot instance in stats_manager so it can access all guilds
+            stats_manager.set_bot(self)
+            
             # Start background task for remote control actions
             self.bg_task = self.loop.create_task(self.process_remote_actions())
             

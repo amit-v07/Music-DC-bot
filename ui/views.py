@@ -76,6 +76,15 @@ class NowPlayingView(ui.View):
         )
         repeat_button.callback = self.toggle_repeat
         self.add_item(repeat_button)
+        
+        # Autoplay button
+        autoplay_enabled = audio_manager.is_autoplay_enabled(self.guild_id)
+        autoplay_button = ui.Button(
+            label="🔥 Autoplay" if autoplay_enabled else "💤 Autoplay",
+            style=discord.ButtonStyle.success if autoplay_enabled else discord.ButtonStyle.secondary
+        )
+        autoplay_button.callback = self.toggle_autoplay
+        self.add_item(autoplay_button)
     
     async def prev_song(self, interaction: discord.Interaction):
         """Handle previous song button"""
@@ -208,6 +217,42 @@ class NowPlayingView(ui.View):
             
         except Exception as e:
             logger.error("repeat_button", e, guild_id=self.guild_id)
+            try:
+                await interaction.response.send_message("❌ An error occurred.", ephemeral=True)
+            except:
+                await interaction.followup.send("❌ An error occurred.", ephemeral=True)
+    
+    async def toggle_autoplay(self, interaction: discord.Interaction):
+        """Handle autoplay toggle button"""
+        try:
+            current_autoplay = audio_manager.is_autoplay_enabled(self.guild_id)
+            new_autoplay = not current_autoplay
+            
+            if new_autoplay:
+                audio_manager.enable_autoplay(self.guild_id)
+            else:
+                audio_manager.disable_autoplay(self.guild_id)
+            
+            status = "ON" if new_autoplay else "OFF"
+            emoji = "🔥" if new_autoplay else "💤"
+            await interaction.response.send_message(
+                f"{emoji} Autoplay is now **{status}**\n"
+                f"{'Music will continue playing automatically when the queue ends!' if new_autoplay else 'Bot will stop when queue ends.'}",
+                ephemeral=True
+            )
+            
+            # Update button states
+            self.update_buttons()
+            
+            # Update the parent message with new buttons
+            try:
+                from ui.views import ui_manager
+                await ui_manager.update_now_playing_buttons(self.ctx, self)
+            except:
+                pass  # Fallback: don't update if there's an issue
+            
+        except Exception as e:
+            logger.error("autoplay_button", e, guild_id=self.guild_id)
             try:
                 await interaction.response.send_message("❌ An error occurred.", ephemeral=True)
             except:
