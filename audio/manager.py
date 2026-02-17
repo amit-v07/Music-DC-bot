@@ -51,7 +51,6 @@ class AudioManager:
         self.guild_current_index: Dict[int, int] = {}
         self.guild_volumes: Dict[int, float] = {}
         self.repeat_flags: Dict[int, bool] = {}
-        self.repeat_flags: Dict[int, bool] = {}
         self.alone_timers: Dict[int, asyncio.Task] = {}
         self.idle_timers: Dict[int, asyncio.Task] = {}
         
@@ -222,6 +221,31 @@ class AudioManager:
         if not song.is_lazy:
             return song
         
+        # Import cache
+        try:
+            from audio.cache import song_cache
+        except ImportError:
+            song_cache = None
+        
+        # Try cache first
+        cache_key = song.webpage_url if song.webpage_url else song.title
+        if song_cache:
+            try:
+                cached_data = await song_cache.get(cache_key)
+                if cached_data:
+                    # Restore song from cache
+                    song.url = cached_data.get('url')
+                    song.title = cached_data.get('title', song.title)
+                    song.original_url = cached_data.get('original_url')
+                    song.webpage_url = cached_data.get('webpage_url', song.webpage_url)
+                    song.duration = cached_data.get('duration', song.duration)
+                    song.thumbnail = cached_data.get('thumbnail', song.thumbnail)
+                    song.is_lazy = False
+                    log_audio_event(0, "song_resolved_from_cache", song.title)
+                    return song
+            except Exception as e:
+                logger.warning(f"Cache retrieval failed: {e}, continuing with API call")
+        
         # Try multiple search strategies
         search_attempts = []
         
@@ -252,22 +276,29 @@ class AudioManager:
                     ydl_opts['default_search'] = 'ytsearch1'
                     ydl_opts['noplaylist'] = True
                 
-                def _extract_info():
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(search_query, download=False)
-                        if 'entries' in info and info['entries']:
-                            # Get the first valid entry
-                            for entry in info['entries']:
-                                if entry and entry.get('url'):
-                                    return entry
-                            return None
-                        elif info and info.get('url'):
-                            return info
-                        return None
+                # Use connection pool to limit concurrent resolutions
+                try:
+                    from utils.connection_pool import ytdlp_pool
+                    info = await ytdlp_pool.execute(ydl_opts, search_query, download=False)
+                except ImportError:
+                    # Fallback to direct execution if pool not available
+                    def _extract_info():
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            return ydl.extract_info(search_query, download=False)
+                    
+                    loop = asyncio.get_event_loop()
+                    info = await loop.run_in_executor(None, _extract_info)
                 
-                # Run in executor to avoid blocking
-                loop = asyncio.get_event_loop()
-                info = await loop.run_in_executor(None, _extract_info)
+                # Process info
+                if info:
+                    if 'entries' in info and info['entries']:
+                        # Get the first valid entry
+                        for entry in info['entries']:
+                            if entry and entry.get('url'):
+                                info = entry
+                                break
+                        else:
+                            info = None
                 
                 if info and info.get('url'):
                     # Successfully resolved! Update song with resolved information
@@ -287,11 +318,30 @@ class AudioManager:
                     
                     song.is_lazy = False
                     
+                    # Cache the successful resolution
+                    if song_cache:
+                        try:
+                            cache_data = {
+                                'url': song.url,
+                                'title': song.title,
+                                'original_url': song.original_url,
+                                'webpage_url': song.webpage_url,
+                                'duration': song.duration,
+                                'thumbnail': song.thumbnail
+                            }
+                            await song_cache.set(cache_key, cache_data)
+                        except Exception as e:
+                            logger.warning(f"Failed to cache song: {e}")
+                    
                     log_audio_event(0, "song_resolved", f"{song.title} (attempt {attempt + 1})")
                     return song
                 else:
                     logger.warning(f"No valid URL found for: {search_query}")
                     
+            except yt_dlp.DownloadError as e:
+                last_error = e
+                logger.warning(f"yt-dlp download error on attempt {attempt + 1} for '{search_query}': {str(e)}")
+                continue
             except Exception as e:
                 last_error = e
                 logger.warning(f"Resolution attempt {attempt + 1} failed for '{search_query}': {str(e)}")
@@ -308,6 +358,7 @@ class AudioManager:
     async def get_spotify_tracks(self, url: str) -> List[Song]:
         """Extract tracks from Spotify URL"""
         if not self.spotify_client:
+            logger.warning("Spotify client not initialized, cannot fetch tracks")
             return []
         
         tracks = []
@@ -315,6 +366,10 @@ class AudioManager:
         try:
             if 'track' in url:
                 track = self.spotify_client.track(url)
+                if not track or not track.get('name'):
+                    logger.warning(f"Invalid track data from Spotify: {url}")
+                    return []
+                    
                 search_query = f"{track['name']} {track['artists'][0]['name']} official audio"
                 tracks.append(Song(
                     title=f"{track['name']} - {track['artists'][0]['name']}",
@@ -365,9 +420,19 @@ class AudioManager:
                         results = self.spotify_client.next(results)
                     else:
                         break
+            else:
+                logger.warning(f"Unsupported Spotify URL format: {url}")
                     
         except Exception as e:
-            logger.error("get_spotify_tracks", e)
+            # Import specific Spotify exceptions if available
+            try:
+                from spotipy.exceptions import SpotifyException
+                if isinstance(e, SpotifyException):
+                    logger.error("spotify_api_error", e, url=url, status_code=getattr(e, 'http_status', 'N/A'))
+                else:
+                    logger.error("get_spotify_tracks", e, url=url)
+            except ImportError:
+                logger.error("get_spotify_tracks", e, url=url)
         
         return tracks
     

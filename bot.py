@@ -45,12 +45,43 @@ class MusicBot(commands.Bot):
             # Start background task for remote control actions
             self.bg_task = self.loop.create_task(self.process_remote_actions())
             
+            # Start periodic cache cleanup task
+            self.cache_cleanup_task = self.loop.create_task(self.periodic_cache_cleanup())
+            
             logger.info("All command modules loaded successfully")
             logger.info("Bot setup completed successfully")
             
         except Exception as e:
             logger.error("setup_hook", e)
             raise
+    
+    async def periodic_cache_cleanup(self):
+        """Periodic task to clean up expired cache entries"""
+        await self.wait_until_ready()
+        logger.info("Cache cleanup task started")
+        
+        while not self.is_closed():
+            try:
+                # Clean up song cache
+                try:
+                    from audio.cache import song_cache
+                    await song_cache.cleanup_expired()
+                    stats = song_cache.get_stats()
+                    logger.info(f"Cache cleanup completed. Stats: {stats}")
+                except ImportError:
+                    pass
+                except Exception as e:
+                    logger.error("cache_cleanup", e)
+                
+                # Wait 1 hour before next cleanup
+                await asyncio.sleep(3600)
+                
+            except asyncio.CancelledError:
+                logger.info("Cache cleanup task cancelled")
+                break
+            except Exception as e:
+                logger.error("periodic_cache_cleanup", e)
+                await asyncio.sleep(600)  # Wait 10 min on error before retrying
     
     async def process_remote_actions(self):
         """Background task to process remote control actions from dashboard"""
