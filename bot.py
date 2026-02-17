@@ -347,9 +347,8 @@ async def help_command(ctx):
             "`play <song/URL>` (alias: `p`) — Play music\n"
             "`pause` — Pause current song\n"
             "`resume` (alias: `start`) — Resume playback\n"
-            "`stop` — Stop and clear queue\n"
-            "`leave` (aliases: `bye`, `dc`, `out`) — Leave voice channel\n"
-            "`nowplaying` — Show current song with controls"
+            "`stop` — Stop, clear queue & disable autoplay\n"
+            "`leave` (aliases: `bye`, `exit`, `quit`, `dc`, `disconnect`, `out`) — Leave voice channel"
         ),
         inline=False
     )
@@ -359,39 +358,36 @@ async def help_command(ctx):
         name="⏭️ **Navigation & Queue**",
         value=(
             "`skip` (alias: `next`) — Skip current song\n"
-            "`jump <number>` — Jump to specific song\n"
+            "`jump <number>` (aliases: `goto`, `jumpto`) — Jump to specific song\n"
             "`queue` (alias: `q`) — Show current queue\n"
             "`shuffle` — Shuffle the queue\n"
             "`repeat` — Toggle repeat current song\n"
             "`remove <number>` — Remove song from queue\n"
             "`move <from> <to>` — Move song position\n"
-            "`clear` (aliases: `cleanup`, `clean`) — Remove invalid songs from queue"
+            "`cleanqueue` (aliases: `cleanup`, `clean`, `clear`) — Remove invalid songs"
         ),
         inline=False
     )
     
-    # Smart Features
+    # AI-Powered Features
     embed.add_field(
-        name="🤖 **Smart Features**",
+        name="🤖 **AI-Powered Features**",
         value=(
-            "`autoplay [on/off]` (aliases: `ap`, `auto`) — Auto-add songs when queue ends\n"
-            "`volume <0.1-2.0>` (alias: `vol`) — Set playback volume\n"
-            "`stats` — Show server music statistics"
+            "`autoplay [on/off]` (aliases: `ap`, `auto`) — **NEW!** Auto-plays related songs when queue ends\n"
+            "`recommend [count]` — **NEW!** Get 1-10 song recommendations based on your listening history"
         ),
         inline=False
     )
     
-    # # Admin Commands
-    # embed.add_field(
-    #     name="🔧 **Admin Commands**",
-    #     value=(
-    #         "`forceleave` — Force disconnect bot\n"
-    #         "`broadcast <message>` — Send message to all servers\n"
-    #         "`servers` — List all connected servers\n"
-    #         "`resetstats` — Reset server statistics"
-    #     ),
-    #     inline=False
-    # )
+    # Audio & Other
+    embed.add_field(
+        name="🔧 **Audio & Other**",
+        value=(
+            "`volume <0.1-2.0>` — Set playback volume\n"
+            "`nowplaying` — Show current song with controls"
+        ),
+        inline=False
+    )
     
     embed.add_field(
         name="💡 **Tips**",
@@ -401,7 +397,7 @@ async def help_command(ctx):
             "• Supports YouTube links, playlists, and Spotify URLs\n"
             "• Auto-leave if alone for 1 minute\n"
             "• Queue supports hundreds of songs!\n"
-            "• AI-powered funny responses! 🎉"
+            "• Try autoplay mode for endless music! 🎉"
         ),
         inline=False
     )

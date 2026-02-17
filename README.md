@@ -1,8 +1,14 @@
 # Music Bot
 
-Music Bot is a feature-rich Discord music bot built with Python, `discord.py`, and `yt-dlp`. It provides an intuitive music experience with **persistent interactive UI**, advanced queue management, and seamless playback across multiple Discord servers simultaneously. The bot features modern UI controls, smart navigation, and comprehensive music management capabilities.
+Music Bot is a feature-rich Discord music bot built with Python, `discord.py`, and `yt-dlp`. It provides an intuitive music experience with **AI-powered recommendations**, **persistent interactive UI**, **smart autoplay mode**, advanced queue management, and seamless playback across multiple Discord servers simultaneously. The bot features modern UI controls, intelligent music discovery, and comprehensive music management capabilities.
 
 ## ✨ Key Features
+
+### 🤖 **AI-Powered Music Discovery**
+- **Smart Autoplay**: Automatically plays related songs when your queue ends, powered by listening history
+- **Personalized Recommendations**: Get song suggestions tailored to your music taste
+- **Learning Algorithm**: Improves recommendations based on what you and your server listen to
+- **Seamless Experience**: Never run out of music with intelligent queue management
 
 ### 🎵 **Modern Interactive Music Player**
 - **Persistent Player UI**: Interactive "Now Playing" interface that updates in place for seamless experience
@@ -37,20 +43,27 @@ Music Bot is a feature-rich Discord music bot built with Python, `discord.py`, a
 | `!join` | | Joins your voice channel |
 | `!play <song/URL>` | `!p` | Plays a song, playlist, or album from YouTube/Spotify |
 | `!pause` | | Pauses current playback |
-| `!resume` | | Resumes paused playback |
-| `!stop` | | Stops playback and clears queue |
-| `!leave` | | Disconnects bot from voice channel |
+| `!resume` | `!start` | Resumes paused playback |
+| `!stop` | | Stops playback, clears queue, and disables autoplay |
+| `!leave` | `!bye`, `!exit`, `!quit`, `!dc`, `!disconnect`, `!out` | Disconnects bot from voice channel |
 
 ### ⏭️ **Navigation & Queue Control**
 | Command | Aliases | Description |
 |---|---|---|
 | `!skip` | `!next` | Skip to next song |
-| `!jump <number>` | `!goto`, `!jumpto` | **NEW**: Jump to specific song number in queue |
+| `!jump <number>` | `!goto`, `!jumpto` | Jump to specific song number in queue |
 | `!queue` | `!q` | Display current queue with pagination |
 | `!remove <number>` | | Remove song at specified position |
 | `!move <from> <to>` | | Move song from one position to another |
 | `!shuffle` | | Randomly shuffle the queue |
 | `!repeat` | | Toggle repeat for current song |
+| `!cleanqueue` | `!cleanup`, `!clean`, `!clear` | Remove invalid/broken songs from the queue |
+
+### 🤖 **AI-Powered Features**
+| Command | Aliases | Description |
+|---|---|---|
+| `!autoplay [on/off]` | `!ap`, `!auto` | **NEW**: Toggle autoplay mode - automatically plays related songs when queue ends |
+| `!recommend [count]` | | **NEW**: Get song recommendations based on listening history (1-10 songs) |
 
 ### 🔧 **Audio & Search**
 | Command | Aliases | Description |
@@ -58,15 +71,35 @@ Music Bot is a feature-rich Discord music bot built with Python, `discord.py`, a
 | `!volume <0.1-2.0>` | | Set playback volume |
 | `!lyrics [song name]` | | Get lyrics for current or specified song |
 | `!find <query>` | `!search` | Search YouTube and select from results |
-| `!helpme` | | **NEW**: Show beautifully formatted help with categories |
+| `!helpme` | | Show beautifully formatted help with categories |
 
 ### 👑 **Admin-Only Commands**
 | Command | Description |
 |---|---|
 | `!setprefix <prefix>` | Set custom command prefix for server |
 | `!setvolume <volume>` | Set default playback volume for server |
+| `!stats` | Show song statistics for this server |
+| `!forceleave` | Force the bot to leave voice channel and clean up |
+| `!clearqueue` | Clear the entire music queue |
+| `!resetstats` | Reset server statistics |
+
+### 🔧 **Bot Owner Only Commands**
+| Command | Description |
+|---|---|
+| `!broadcast <message>` | Send a message to all servers |
+| `!servers` | List all servers the bot is in |
 
 ## 🚀 What's New in Latest Version
+
+### 🤖 **AI-Powered Music Discovery**
+- **Autoplay Mode**: `!autoplay` (aliases: `!ap`, `!auto`) - Automatically plays related songs when your queue ends
+  - Smart recommendations based on your listening history
+  - Instant recommendations when queue is empty
+  - Toggle on/off with simple commands
+- **Manual Recommendations**: `!recommend [count]` - Get 1-10 song recommendations based on your preferences
+  - Personalized suggestions from your listening patterns
+  - Add directly to queue with one command
+  - Powered by AI learning from your music taste
 
 ### 🎵 **Persistent Music Player**
 - **Always-visible controls**: Player UI stays consistent across all songs
@@ -77,6 +110,14 @@ Music Bot is a feature-rich Discord music bot built with Python, `discord.py`, a
 - **Jump Commands**: `!jump 5`, `!goto 3`, `!jumpto 10` - instantly go to any song
 - **Smart Button States**: Previous/Next buttons intelligently enable/disable
 - **Queue Position Tracking**: See exactly which song is playing with ▶️ indicator
+
+### 🛠️ **Command Improvements**
+- **More Aliases**: Added convenient shortcuts for common commands
+  - `!resume` now also works as `!start`
+  - `!leave` now supports `!bye`, `!exit`, `!quit`, `!dc`, `!disconnect`, `!out`
+  - `!cleanqueue` also works as `!cleanup`, `!clean`, `!clear`
+- **Queue Maintenance**: New `!cleanqueue` command to remove broken/invalid songs
+- **Enhanced Stop**: `!stop` now also disables autoplay and clears queue
 
 ### 💎 **Improved User Experience**
 - **Error Prevention**: Buttons prevent invalid operations (no "previous" on first song)
