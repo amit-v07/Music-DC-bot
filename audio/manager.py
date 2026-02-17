@@ -709,12 +709,23 @@ class AudioManager:
             existing_titles = {song.title.lower() for song in queue if song.title}
             existing_urls = {song.webpage_url for song in queue if song.webpage_url}
             
+            # Additional: Get recent history to avoid repeating songs
+            recent_tracks = listening_history.get_recent_tracks(guild_id, count=20)
+            for track in recent_tracks:
+                if track.url:
+                    existing_urls.add(track.url)
+                if track.title:
+                    existing_titles.add(track.title.lower())
+            
             # Also track the current/last playing song URL to avoid re-adding it
             current_song = self.get_current_song(guild_id)
-            if current_song and current_song.webpage_url:
-                existing_urls.add(current_song.webpage_url)
-            if current_song and current_song.original_url:
-                existing_urls.add(current_song.original_url)
+            if current_song:
+                if current_song.webpage_url:
+                    existing_urls.add(current_song.webpage_url)
+                if current_song.original_url:
+                    existing_urls.add(current_song.original_url)
+                if current_song.title:
+                    existing_titles.add(current_song.title.lower())
             
             # Fetch more recommendations than needed to account for filtering
             fetch_count = min(count * 3, 15)  # Fetch 3x what we need, max 15
