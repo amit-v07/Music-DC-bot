@@ -11,9 +11,9 @@ from config import config
 from utils.logger import logger, log_command_usage, log_audio_event
 from utils.stats_manager import stats_manager
 from audio.manager import audio_manager, Song
-from ui.views import ui_manager
 from utils.ai_brain import ai_brain
 from utils.listening_history import listening_history
+from utils.limiter import play_limiter, control_limiter
 
 
 class MusicCog(commands.Cog):
@@ -28,7 +28,7 @@ class MusicCog(commands.Cog):
         log_command_usage(ctx, "join")
         
         if not ctx.author.voice:
-            await ctx.send("❌ Arre, pehle voice channel join karo na!")
+            await ctx.send("❌ Arre bhai, pehle voice channel toh join karo! Main hawa mein gaana bajau kya? 🤷‍♂️")
             return
         
         if ctx.voice_client:
@@ -37,7 +37,7 @@ class MusicCog(commands.Cog):
                 return
             else:
                 await ctx.voice_client.move_to(ctx.author.voice.channel)
-                await ctx.send(f"🔄 Okay, aa gayi {ctx.author.voice.channel.name} mein")
+                await ctx.send(f"🔄 Aa gayi main **{ctx.author.voice.channel.name}** mein! Ab machega shor! 🔊")
         else:
             channel = ctx.author.voice.channel
             try:
@@ -48,7 +48,7 @@ class MusicCog(commands.Cog):
             except Exception as e:
                 await ctx.send(f"❌ Failed to connect to voice channel: {str(e)}")
                 return
-            await ctx.send(f"✅ Aa gayi main {channel.name} mein, music shuru karein?")
+            await ctx.send(f"✅ **{channel.name}** mein entry maar li hai! Chalo music shuru karte hain! 🎵")
         
         # Check if bot is alone and start timer if needed
         if audio_manager.is_bot_alone_in_vc(ctx.guild):
@@ -61,14 +61,25 @@ class MusicCog(commands.Cog):
         """Play a song or add to queue"""
         log_command_usage(ctx, "play", query)
         
-        if not query.strip():
-            await ctx.send("❌ Please provide a song name or URL!")
+        # Rate limit check
+        if not play_limiter.check(ctx.author.id):
+            await ctx.send("⏱️ Oye hoye! Itni jaldi kya hai? Thoda saans le le bhai! 🛑")
             return
+        
+        if not query.strip():
+            await ctx.send("❌ Arre, gaane ka naam toh batao! Ya main khud gaaun? 🎤")
+            return
+            
+        if len(query) > 500:
+            await ctx.send("❌ Itna lamba search? Novel likh rahe ho kya? Chota karo isse! (Max 500 chars)")
+            return
+            
+        query = query.strip()
         
         # Join voice channel if not already connected
         if not ctx.voice_client:
             if not ctx.author.voice:
-                await ctx.send("❌ You need to be in a voice channel!")
+                await ctx.send("❌ Voice channel mein aao pehle, wahan party karenge!")
                 return
             try:
                 await ctx.author.voice.channel.connect(timeout=60, reconnect=True)
@@ -90,7 +101,7 @@ class MusicCog(commands.Cog):
             
             processing_msg = None
             if is_potential_playlist:
-                processing_msg = await ctx.send("🔄 Processing playlist... This may take a moment.")
+                processing_msg = await ctx.send("🔄 Playlist detected! Ruko, channi laga ke gaane nikaal rahi hoon... 🕵️‍♀️")
             
             # For playlists, use batch processing
             if is_potential_playlist:
@@ -100,7 +111,7 @@ class MusicCog(commands.Cog):
                 songs = await self._process_query(query, ctx.author.id)
                 
                 if not songs:
-                    await ctx.send("❌ Couldn't find anything to play with that query.")
+                    await ctx.send("❌ Kuch nahi mila yaar. Spelling check karo ya koi aur gaana try karo! 🔍")
                     return
                 
                 # Add songs to queue
@@ -117,9 +128,9 @@ class MusicCog(commands.Cog):
                 # Send feedback to user
                 song = songs[0]
                 if queue_position == 0:
-                    await ctx.send(f"🎵 Lo, suno: **{song.title}**")
+                    await ctx.send(f"🎵 **Lo suno!** Ab baj raha hai: **{song.title}** 🎶")
                 else:
-                    await ctx.send(f"➕ Iske baad ye bajega: **{song.title}**")
+                    await ctx.send(f"➕ **Line mein lag gaya:** **{song.title}** (#{queue_position})")
                 
                 # Update UI
                 await ui_manager.update_all_ui(ctx)
@@ -130,11 +141,11 @@ class MusicCog(commands.Cog):
             logger.error("play_command", e, guild_id=ctx.guild.id, user_id=ctx.author.id)
             error_msg = str(e)
             if "Spotify support is not configured" in error_msg:
-                await ctx.send("❌ Spotify integration is not configured. Please set up SPOTIFY_CLIENT_ID and SPOTIPY_CLIENT_SECRET environment variables.")
+                await ctx.send("❌ Spotify setup nahi hai bhai. Owner ko bolo `SPOTIFY_CLIENT_ID` set kare!")
             elif "playlist" in error_msg.lower():
-                await ctx.send(f"❌ Error processing playlist: {error_msg}")
+                await ctx.send(f"❌ Playlist mein locha hai: {error_msg}")
             else:
-                await ctx.send(f"❌ An error occurred while processing your request: {error_msg}")
+                await ctx.send(f"❌ Arre yaar, kuch gadbad ho gayi: {error_msg}")
     
     async def _process_query(self, query: str, user_id: int) -> List[Song]:
         """Process user query and return list of songs"""
@@ -196,9 +207,40 @@ class MusicCog(commands.Cog):
                 
                 return extracted_songs
         
-        # Run in executor to avoid blocking
-        loop = asyncio.get_event_loop()
-        songs = await loop.run_in_executor(None, _extract_info)
+        # Run in executor to avoid blocking, wrapped in circuit breaker
+        try:
+            from utils.circuit_breaker import youtube_circuit_breaker, CircuitBreakerOpen
+            
+            async def _safe_extract():
+                if youtube_circuit_breaker.state == "OPEN":
+                     # Check if recovery timeout passed
+                    if time.time() - youtube_circuit_breaker.last_failure_time > youtube_circuit_breaker.recovery_timeout:
+                        youtube_circuit_breaker.state = "HALF_OPEN"
+                    else:
+                        raise CircuitBreakerOpen("YouTube API circuit is OPEN. Please wait.")
+                
+                try:
+                    result = await loop.run_in_executor(None, _extract_info)
+                    
+                    if youtube_circuit_breaker.state == "HALF_OPEN":
+                         youtube_circuit_breaker.state = "CLOSED"
+                         youtube_circuit_breaker.failures = 0
+                    
+                    return result
+                except Exception as e:
+                    youtube_circuit_breaker.failures += 1
+                    youtube_circuit_breaker.last_failure_time = time.time()
+                    if youtube_circuit_breaker.failures >= youtube_circuit_breaker.failure_threshold:
+                        youtube_circuit_breaker.state = "OPEN"
+                    raise e
+
+            loop = asyncio.get_event_loop()
+            songs = await _safe_extract()
+            
+        except CircuitBreakerOpen:
+            raise ValueError("YouTube API is temporarily unavailable due to high error rate. Please try again in a minute.")
+        except Exception as e:
+            raise e
         
         return songs
     
@@ -264,6 +306,13 @@ class MusicCog(commands.Cog):
             added_count = total_songs - len(remaining_songs)  # Already added first batch
             
             for i in range(0, len(remaining_songs), batch_size):
+                # Check circuit breaker before processing batch
+                from utils.circuit_breaker import youtube_circuit_breaker
+                if youtube_circuit_breaker.state == "OPEN":
+                     # API is down, stop adding song to prevent bans
+                     logger.warning("YouTube API circuit OPEN. Stopping background playlist processing.")
+                     break
+
                 batch = remaining_songs[i:i + batch_size]
                 audio_manager.add_songs(ctx.guild.id, batch)
                 added_count += len(batch)
@@ -296,10 +345,10 @@ class MusicCog(commands.Cog):
         
         if ctx.voice_client.is_playing():
             ctx.voice_client.pause()
-            await ctx.send("⏸️ Gaana pause ho gaya. `!resume` se wapas chalu karna.")
+            await ctx.send("⏸️ **Ruk gaya bhai!** Break le liya. `!resume` kar dena jab wapas aao.")
             log_audio_event(ctx.guild.id, "paused")
         else:
-            await ctx.send("❌ Kuch baj hi nahi raha hai, kya pause karun?")
+            await ctx.send("❌ Are kuch baj hi nahi raha, kise pause karu? Hawa ko? 😂")
     
     @commands.command(aliases=['start'])
     async def resume(self, ctx):
@@ -312,18 +361,22 @@ class MusicCog(commands.Cog):
         
         if ctx.voice_client.is_paused():
             ctx.voice_client.resume()
-            await ctx.send("▶️ Chalo, music wapas on!")
+            await ctx.send("▶️ **Chalo bhai, wapas party shuru!** 🕺")
             log_audio_event(ctx.guild.id, "resumed")
         else:
-            await ctx.send("❌ Gaana toh pehle se hi chal raha hai, dear!")
+            await ctx.send("❌ Gaana toh chal hi raha hai! Kya restart karu? 🤔")
     
     @commands.command(aliases=['next'])
     async def skip(self, ctx):
         """Skip to the next song"""
         log_command_usage(ctx, "skip")
         
+        if not control_limiter.check(ctx.author.id):
+            await ctx.send("⏱️ Too fast! Please wait before skipping again.")
+            return
+        
         if not ctx.voice_client:
-            await ctx.send("❌ I'm not in a voice channel!")
+            await ctx.send("❌ Bhai main voice channel mein nahi hoon, kis chiz ko skip karu?")
             return
         
         if ctx.voice_client.is_playing() or ctx.voice_client.is_paused():
@@ -338,18 +391,21 @@ class MusicCog(commands.Cog):
                 "user": ctx.author.display_name,
                 "song": song_title
             })
-            await ctx.send(f"⏭️ {reply}")
+            await ctx.send(f"⏭️ **Skip kar diya!** {reply}")
             log_audio_event(ctx.guild.id, "skipped")
         else:
-            await ctx.send("❌ Nothing is currently playing!")
+            await ctx.send("❌ Are kuch baj hi nahi raha, kise skip karu?")
     
     @commands.command()
     async def stop(self, ctx):
         """Stop playback, clear queue, and disable autoplay"""
         log_command_usage(ctx, "stop")
         
+        if not control_limiter.check(ctx.author.id):
+            return  # Silently ignore stop spam
+        
         if not ctx.voice_client:
-            await ctx.send("❌ Arre, main toh kisi voice channel mein hi nahi hoon!")
+            await ctx.send("❌ Arre, main toh kisi voice channel mein hi nahi hoon! Kise roku?")
             return
         
         # 1. Clear Queue
@@ -367,9 +423,9 @@ class MusicCog(commands.Cog):
         
         # Send comprehensive status message
         await ctx.send(
-            f"⏹️ **Stopped!** {reply}\n"
-            "🗑️ Queue cleared.\n"
-            "⏸️ Autoplay disabled."
+            f"⏹️ **Bas, khatam!** {reply}\n"
+            "🗑️ Queue bhi saaf kar di.\n"
+            "⏸️ Autoplay bhi band."
         )
         
         await ui_manager.update_all_ui(ctx)
@@ -381,7 +437,7 @@ class MusicCog(commands.Cog):
         log_command_usage(ctx, "leave")
         
         if not ctx.voice_client:
-            await ctx.send("❌ I'm not in a voice channel!")
+            await ctx.send("❌ Main pehle se hi bahar hoon bhai!")
             return
         
         # Clean up
@@ -391,7 +447,7 @@ class MusicCog(commands.Cog):
         await ui_manager.cleanup_all_messages(ctx.guild.id)
         
         await ctx.voice_client.disconnect()
-        await ctx.send("👋 Okay, main chali. Phir milte hain!")
+        await ctx.send("👋 **Chalo, main chalti hoon!** Phir milenge! Tata! byee! 👋")
         log_audio_event(ctx.guild.id, "left_voice_channel")
     
     @commands.command(aliases=['goto', 'jumpto'])
@@ -402,14 +458,14 @@ class MusicCog(commands.Cog):
         queue = audio_manager.get_queue(ctx.guild.id)
         
         if not queue:
-            await ctx.send("❌ The queue is empty!")
+            await ctx.send("❌ Queue khaali hai! Kahan jump karu? Khayi mein? 😅")
             return
         
         # Convert to 0-based index
         target_index = position - 1
         
         if not (0 <= target_index < len(queue)):
-            await ctx.send(f"❌ Invalid position! Choose between 1 and {len(queue)}")
+            await ctx.send(f"❌ Galat number! 1 se {len(queue)} ke beech mein bolo.")
             return
         
         if audio_manager.jump_to_song(ctx.guild.id, target_index):
@@ -421,10 +477,10 @@ class MusicCog(commands.Cog):
             await play_current_song(ctx)
             
             song_title = queue[target_index].title
-            await ctx.send(f"⏭️ Jumped to position {position}: **{song_title}**")
+            await ctx.send(f"⏭️ **Chalo seedha wahan!** Ab bajega: **{song_title}** (#{position})")
             log_audio_event(ctx.guild.id, "jumped_to_song", song_title)
         else:
-            await ctx.send("❌ Failed to jump to that position")
+            await ctx.send("❌ Jump fail ho gaya yaar!")
     
     @commands.command()
     async def shuffle(self, ctx):
@@ -434,11 +490,11 @@ class MusicCog(commands.Cog):
         queue = audio_manager.get_queue(ctx.guild.id)
         
         if len(queue) <= 1:
-            await ctx.send("❌ Not enough songs in the queue to shuffle")
+            await ctx.send("❌ Ek gaane ko kya shuffle karu? Thode aur add karo!")
             return
         
         audio_manager.shuffle_queue(ctx.guild.id)
-        await ctx.send("🔀 Queue shuffled!")
+        await ctx.send("🔀 **Mix kar diya sab!** Ab suspense bana rahega! 🎲")
         await ui_manager.update_queue(ctx)
         log_audio_event(ctx.guild.id, "shuffled_queue")
     
@@ -450,14 +506,14 @@ class MusicCog(commands.Cog):
         queue = audio_manager.get_queue(ctx.guild.id)
         
         if not queue:
-            await ctx.send("❌ The queue is empty!")
+            await ctx.send("❌ Queue khaali hai bhai!")
             return
         
         # Convert to 0-based index
         index = position - 1
         
         if not (0 <= index < len(queue)):
-            await ctx.send(f"❌ Invalid position! Choose between 1 and {len(queue)}")
+            await ctx.send(f"❌ Galat number! 1 se {len(queue)} ke beech mein bolo.")
             return
         
         # Handle removing currently playing song
@@ -465,14 +521,14 @@ class MusicCog(commands.Cog):
         if index == current_idx:
             if ctx.voice_client and (ctx.voice_client.is_playing() or ctx.voice_client.is_paused()):
                 ctx.voice_client.stop()
-            await ctx.send(f"⏭️ Skipped currently playing song")
+            await ctx.send(f"⏭️ Jo baj raha tha usse hi uda diya!")
         else:
             removed_song = audio_manager.remove_song(ctx.guild.id, index)
             if removed_song:
-                await ctx.send(f"🗑️ Removed: **{removed_song.title}**")
+                await ctx.send(f"🗑️ Uda diya: **{removed_song.title}**")
                 await ui_manager.update_queue(ctx)
             else:
-                await ctx.send("❌ Failed to remove song")
+                await ctx.send("❌ Delete nahi ho paya!")
         
         log_audio_event(ctx.guild.id, "removed_song")
     
@@ -484,7 +540,7 @@ class MusicCog(commands.Cog):
         queue = audio_manager.get_queue(ctx.guild.id)
         
         if len(queue) <= 1:
-            await ctx.send("❌ Not enough songs in the queue to move")
+            await ctx.send("❌ Akele gaane ko kahan le jaaun? 🤷‍♂️")
             return
         
         # Convert to 0-based indices
@@ -492,16 +548,16 @@ class MusicCog(commands.Cog):
         to_idx = to_pos - 1
         
         if not (0 <= from_idx < len(queue) and 0 <= to_idx < len(queue)):
-            await ctx.send(f"❌ Invalid positions! Choose between 1 and {len(queue)}")
+            await ctx.send(f"❌ Galat positions! 1 se {len(queue)} ke beech mein bolo.")
             return
         
         if audio_manager.move_song(ctx.guild.id, from_idx, to_idx):
             song_title = queue[to_idx].title
-            await ctx.send(f"🔄 Moved **{song_title}** to position {to_pos}")
+            await ctx.send(f"🔄 **{song_title}** ko position {to_pos} pe bhej diya!")
             await ui_manager.update_queue(ctx)
             log_audio_event(ctx.guild.id, "moved_song")
         else:
-            await ctx.send("❌ Failed to move song")
+            await ctx.send("❌ Move nahi ho paya yaar!")
     
     @commands.command()
     async def repeat(self, ctx):
@@ -514,7 +570,8 @@ class MusicCog(commands.Cog):
         
         status = "ON" if new_repeat else "OFF"
         emoji = "🔂" if new_repeat else "🔁"
-        await ctx.send(f"{emoji} Repeat is now **{status}**")
+        msg = "Ab yahi bajta rahega!" if new_repeat else "Chalo, aage badhte hain!"
+        await ctx.send(f"{emoji} Repeat **{status}** kar diya! {msg}")
         log_audio_event(ctx.guild.id, f"repeat_{status.lower()}")
     
     @commands.command()
@@ -523,7 +580,7 @@ class MusicCog(commands.Cog):
         log_command_usage(ctx, "volume", str(vol))
         
         if not (config.min_volume <= vol <= config.max_volume):
-            await ctx.send(f"❌ Volume must be between {config.min_volume} and {config.max_volume}")
+            await ctx.send(f"❌ Bhai, volume {config.min_volume} se {config.max_volume} ke beech rakhna!")
             return
         
         audio_manager.set_volume(ctx.guild.id, vol)
@@ -532,7 +589,7 @@ class MusicCog(commands.Cog):
         if ctx.voice_client and ctx.voice_client.source:
             ctx.voice_client.source.volume = vol
         
-        await ctx.send(f"🔊 Volume set to **{vol}** (session only)")
+        await ctx.send(f"🔊 Volume set to **{vol}**! (Sirf abhi ke liye) 🎚️")
         log_audio_event(ctx.guild.id, "volume_changed", str(vol))
     
     @commands.command(aliases=['cleanup', 'clean', 'clear'])

@@ -256,21 +256,49 @@ class YouTubeMusicRecommendationEngine:
         """Check if recommendations are cached and valid"""
         if video_url not in self.cache:
             return False
+            
         timestamp = self.cache_timestamps.get(video_url)
         if not timestamp:
             return False
-        return datetime.now() - timestamp < self.cache_duration
+            
+        if datetime.now() - timestamp < self.cache_duration:
+             # Move to end (most recently used)
+             self._move_to_end(video_url)
+             return True
+             
+        # Expired
+        self._remove_from_cache(video_url)
+        return False
+    
+    def _move_to_end(self, key: str):
+        """Move item to end of cache (LRU implementation)"""
+        if key in self.cache:
+            val = self.cache.pop(key)
+            self.cache[key] = val
+        if key in self.cache_timestamps:
+            val = self.cache_timestamps.pop(key)
+            self.cache_timestamps[key] = val
+            
+    def _remove_from_cache(self, key: str):
+        """Remove item from cache"""
+        self.cache.pop(key, None)
+        self.cache_timestamps.pop(key, None)
     
     def _cache_results(self, video_url: str, recommendations: List[RecommendedSong]):
-        """Cache recommendation results"""
+        """Cache recommendation results with LRU eviction"""
+        # Remove if exists to update position
+        self._remove_from_cache(video_url)
+        
+        # Add new entry
         self.cache[video_url] = recommendations
         self.cache_timestamps[video_url] = datetime.now()
         
-        # Limit cache size
-        if len(self.cache) > 50:
-            oldest_url = min(self.cache_timestamps.items(), key=lambda x: x[1])[0]
-            del self.cache[oldest_url]
-            del self.cache_timestamps[oldest_url]
+        # Limit cache size (LRU eviction)
+        # Since we use standard dicts (ordered by insertion in Python 3.7+),
+        # popping the first key removes the least recently added/used item
+        while len(self.cache) > 100:  # Limit to 100 entries per instance
+            oldest_key = next(iter(self.cache))
+            self._remove_from_cache(oldest_key)
 
 
 class RecommendationManager:

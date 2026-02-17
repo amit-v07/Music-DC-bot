@@ -48,6 +48,9 @@ class MusicBot(commands.Bot):
             # Start periodic cache cleanup task
             self.cache_cleanup_task = self.loop.create_task(self.periodic_cache_cleanup())
             
+            # Start periodic resource cleanup task
+            self.resource_cleanup_task = self.loop.create_task(self.periodic_resource_cleanup())
+            
             logger.info("All command modules loaded successfully")
             logger.info("Bot setup completed successfully")
             
@@ -81,7 +84,50 @@ class MusicBot(commands.Bot):
                 break
             except Exception as e:
                 logger.error("periodic_cache_cleanup", e)
-                await asyncio.sleep(600)  # Wait 10 min on error before retrying
+                await asyncio.sleep(600)
+
+    async def periodic_resource_cleanup(self):
+        """Periodic task to clean up stale timers and monitor memory"""
+        await self.wait_until_ready()
+        logger.info("Resource cleanup task started")
+        
+        import psutil
+        import os
+        
+        while not self.is_closed():
+            try:
+                # 1. Clean up stale timers
+                active_guilds = set(g.id for g in self.guilds)
+                
+                # Snapshot keys to avoid runtime errors during iteration
+                for guild_id in list(audio_manager.alone_timers.keys()):
+                    if guild_id not in active_guilds:
+                        audio_manager.cancel_alone_timer(guild_id)
+                        
+                for guild_id in list(audio_manager.idle_timers.keys()):
+                    if guild_id not in active_guilds:
+                        audio_manager.cancel_idle_timer(guild_id)
+
+                # 2. Memory Monitoring
+                process = psutil.Process(os.getpid())
+                memory_usage = process.memory_info().rss / 1024 / 1024  # MB
+                
+                logger.info(f"Resource Check: Memory: {memory_usage:.2f} MB | Guilds: {len(self.guilds)}")
+                
+                # 3. Aggressive GC if memory is too high
+                if memory_usage > config.max_memory_mb:
+                    import gc
+                    gc.collect()
+                    logger.warning(f"High memory usage detected ({memory_usage:.2f} MB > {config.max_memory_mb} MB). Forcing GC.")
+                
+                # Run periodically based on config
+                await asyncio.sleep(config.resource_cleanup_interval)
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("resource_cleanup", e)
+                await asyncio.sleep(60)
     
     async def process_remote_actions(self):
         """Background task to process remote control actions from dashboard"""

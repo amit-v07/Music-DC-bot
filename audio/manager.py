@@ -57,6 +57,9 @@ class AudioManager:
         # Autoplay state
         self.autoplay_enabled: Dict[int, bool] = {}
         
+        # Request deduplication
+        self._pending_resolutions = set()
+        
         # Initialize Spotify client if credentials are available
         self.spotify_client = None
         if config.spotify_client_id and config.spotify_client_secret:
@@ -106,6 +109,8 @@ class AudioManager:
         if queue_length_before == 0:
             # Queue was empty, start from beginning
             self.guild_current_index[guild_id] = 0
+            
+        logger.info(f"Added {len(songs)} songs to queue", guild_id=guild_id)
         
         return queue_length_before
     
@@ -121,6 +126,7 @@ class AudioManager:
             if index <= current_idx and current_idx > 0:
                 self.guild_current_index[guild_id] = current_idx - 1
             
+            logger.info(f"Removed song at index {index}: {removed_song.title}", guild_id=guild_id)
             return removed_song
         return None
     
@@ -144,6 +150,7 @@ class AudioManager:
         elif to_idx <= current_idx < from_idx:
             self.guild_current_index[guild_id] = current_idx + 1
         
+        logger.info(f"Moved song from {from_idx} to {to_idx}", guild_id=guild_id)
         return True
     
     def shuffle_queue(self, guild_id: int):
@@ -166,6 +173,14 @@ class AudioManager:
             # Put current song back at the beginning
             queue.insert(0, current_song)
             self.guild_current_index[guild_id] = 0
+            
+            logger.info(f"Shuffled queue with {len(queue)} songs", guild_id=guild_id)
+        else:
+            # Queue finished, shuffle everything and reset to start
+            import random
+            random.shuffle(queue)
+            self.guild_current_index[guild_id] = 0
+            logger.info(f"Shuffled finished queue with {len(queue)} songs, resetting index", guild_id=guild_id)
     
     def clear_queue(self, guild_id: int):
         """Clear the entire queue"""
@@ -205,7 +220,10 @@ class AudioManager:
         if current_idx < len(queue) - 1:
             self.guild_current_index[guild_id] = current_idx + 1
             return True
-        return False
+        else:
+            # We are at the end, but increment anyway so we point to "next" (which might be empty now but filled later)
+            self.guild_current_index[guild_id] = len(queue)
+            return False
     
     def previous_song(self, guild_id: int) -> bool:
         """Move to previous song, return True if successful"""
@@ -246,114 +264,135 @@ class AudioManager:
             except Exception as e:
                 logger.warning(f"Cache retrieval failed: {e}, continuing with API call")
         
-        # Try multiple search strategies
-        search_attempts = []
+        if song.webpage_url in self._pending_resolutions:
+             # Wait for existing resolution
+             logger.info(f"Waiting for pending resolution: {song.title}")
+             while song.webpage_url in self._pending_resolutions:
+                 await asyncio.sleep(0.1)
+             
+             # Check cache again after wait
+             if song_cache:
+                 cached = await song_cache.get(cache_key)
+                 if cached:
+                     song.url = cached.get('url')
+                     song.is_lazy = False
+                     return song
+
+        # Mark as pending
+        self._pending_resolutions.add(song.webpage_url)
         
-        # If we have a direct URL, try that first
-        if song.webpage_url and self._is_http_url(song.webpage_url):
-            search_attempts.append(song.webpage_url)
+        try:
+            # Try multiple search strategies
+            search_attempts = []
         
-        # Add various search query formats for better success rate
-        title_clean = song.title.replace(" - ", " ").replace("(", "").replace(")", "")
-        search_attempts.extend([
-            f"{title_clean} audio",
-            f"{title_clean} official",
-            f"{title_clean}",
-            song.title  # Original title as fallback
-        ])
-        
-        last_error = None
-        
-        for attempt, search_query in enumerate(search_attempts):
-            try:
-                ydl_opts = config.ydl_options.copy()
-                ydl_opts['quiet'] = True  # Reduce noise in logs
-                
-                # Configure search method
-                if self._is_http_url(search_query):
-                    ydl_opts['noplaylist'] = True
-                else:
-                    ydl_opts['default_search'] = 'ytsearch1'
-                    ydl_opts['noplaylist'] = True
-                
-                # Use connection pool to limit concurrent resolutions
+            # If we have a direct URL, try that first
+            if song.webpage_url and self._is_http_url(song.webpage_url):
+                search_attempts.append(song.webpage_url)
+            
+            # Add various search query formats for better success rate
+            title_clean = song.title.replace(" - ", " ").replace("(", "").replace(")", "")
+            search_attempts.extend([
+                f"{title_clean} audio",
+                f"{title_clean} official",
+                f"{title_clean}",
+                song.title  # Original title as fallback
+            ])
+            
+            last_error = None
+            
+            for attempt, search_query in enumerate(search_attempts):
                 try:
-                    from utils.connection_pool import ytdlp_pool
-                    info = await ytdlp_pool.execute(ydl_opts, search_query, download=False)
-                except ImportError:
-                    # Fallback to direct execution if pool not available
-                    def _extract_info():
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                            return ydl.extract_info(search_query, download=False)
+                    ydl_opts = config.ydl_options.copy()
+                    ydl_opts['quiet'] = True  # Reduce noise in logs
                     
-                    loop = asyncio.get_event_loop()
-                    info = await loop.run_in_executor(None, _extract_info)
-                
-                # Process info
-                if info:
-                    if 'entries' in info and info['entries']:
-                        # Get the first valid entry
-                        for entry in info['entries']:
-                            if entry and entry.get('url'):
-                                info = entry
-                                break
-                        else:
-                            info = None
-                
-                if info and info.get('url'):
-                    # Successfully resolved! Update song with resolved information
-                    song.url = info['url']
-                    song.title = info.get('title', song.title)
+                    # Configure search method
+                    if self._is_http_url(search_query):
+                        ydl_opts['noplaylist'] = True
+                    else:
+                        ydl_opts['default_search'] = 'ytsearch1'
+                        ydl_opts['noplaylist'] = True
                     
-                    # Preserve original YouTube URL before overwriting webpage_url
-                    if info.get('webpage_url') and 'youtube.com' in info.get('webpage_url', ''):
-                        song.original_url = info['webpage_url']
+                    # Use connection pool to limit concurrent resolutions
+                    try:
+                        from utils.connection_pool import ytdlp_pool
+                        info = await ytdlp_pool.execute(ydl_opts, search_query, download=False)
+                    except ImportError:
+                        # Fallback to direct execution if pool not available
+                        def _extract_info():
+                            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                                return ydl.extract_info(search_query, download=False)
+                        
+                        loop = asyncio.get_event_loop()
+                        info = await loop.run_in_executor(None, _extract_info)
                     
-                    song.webpage_url = info.get('webpage_url', song.webpage_url)
-                    song.duration = info.get('duration', song.duration)
-                    song.thumbnail = info.get('thumbnail', song.thumbnail)
+                    # Process info
+                    if info:
+                        if 'entries' in info and info['entries']:
+                            # Get the first valid entry
+                            for entry in info['entries']:
+                                if entry and entry.get('url'):
+                                    info = entry
+                                    break
+                            else:
+                                info = None
                     
-                    if not song.webpage_url or not song.webpage_url.startswith('http'):
+                    if info and info.get('url'):
+                        # Successfully resolved! Update song with resolved information
+                        song.url = info['url']
+                        song.title = info.get('title', song.title)
+                        
+                        # Preserve original YouTube URL before overwriting webpage_url
+                        if info.get('webpage_url') and 'youtube.com' in info.get('webpage_url', ''):
+                            song.original_url = info['webpage_url']
+                        
                         song.webpage_url = info.get('webpage_url', song.webpage_url)
-                    
-                    song.is_lazy = False
-                    
-                    # Cache the successful resolution
-                    if song_cache:
-                        try:
-                            cache_data = {
-                                'url': song.url,
-                                'title': song.title,
-                                'original_url': song.original_url,
-                                'webpage_url': song.webpage_url,
-                                'duration': song.duration,
-                                'thumbnail': song.thumbnail
-                            }
-                            await song_cache.set(cache_key, cache_data)
-                        except Exception as e:
-                            logger.warning(f"Failed to cache song: {e}")
-                    
-                    log_audio_event(0, "song_resolved", f"{song.title} (attempt {attempt + 1})")
-                    return song
-                else:
-                    logger.warning(f"No valid URL found for: {search_query}")
-                    
-            except yt_dlp.DownloadError as e:
-                last_error = e
-                logger.warning(f"yt-dlp download error on attempt {attempt + 1} for '{search_query}': {str(e)}")
-                continue
-            except Exception as e:
-                last_error = e
-                logger.warning(f"Resolution attempt {attempt + 1} failed for '{search_query}': {str(e)}")
-                continue
-        
-        # All attempts failed
-        error_msg = f"Failed to resolve song after {len(search_attempts)} attempts: {song.title}"
-        if last_error:
-            error_msg += f" (Last error: {str(last_error)})"
-        
-        logger.error("resolve_lazy_song_all_attempts_failed", Exception(error_msg), song_title=song.title)
-        raise ValueError(error_msg)
+                        song.duration = info.get('duration', song.duration)
+                        song.thumbnail = info.get('thumbnail', song.thumbnail)
+                        
+                        if not song.webpage_url or not song.webpage_url.startswith('http'):
+                            song.webpage_url = info.get('webpage_url', song.webpage_url)
+                        
+                        song.is_lazy = False
+                        
+                        # Cache the successful resolution
+                        if song_cache:
+                            try:
+                                cache_data = {
+                                    'url': song.url,
+                                    'title': song.title,
+                                    'original_url': song.original_url,
+                                    'webpage_url': song.webpage_url,
+                                    'duration': song.duration,
+                                    'thumbnail': song.thumbnail
+                                }
+                                await song_cache.set(cache_key, cache_data)
+                            except Exception as e:
+                                logger.warning(f"Failed to cache song: {e}")
+                        
+                        log_audio_event(0, "song_resolved", f"{song.title} (attempt {attempt + 1})")
+                        return song
+                    else:
+                        logger.warning(f"No valid URL found for: {search_query}")
+                        
+                except yt_dlp.DownloadError as e:
+                    last_error = e
+                    logger.warning(f"yt-dlp download error on attempt {attempt + 1} for '{search_query}': {str(e)}")
+                    continue
+                except Exception as e:
+                    last_error = e
+                    logger.warning(f"Resolution attempt {attempt + 1} failed for '{search_query}': {str(e)}")
+                    continue
+            
+            # All attempts failed
+            error_msg = f"Failed to resolve song after {len(search_attempts)} attempts: {song.title}"
+            if last_error:
+                error_msg += f" (Last error: {str(last_error)})"
+            
+            logger.error("resolve_lazy_song_all_attempts_failed", Exception(error_msg), song_title=song.title)
+            raise ValueError(error_msg)
+            
+        finally:
+            self._pending_resolutions.discard(song.webpage_url)
     
     async def get_spotify_tracks(self, url: str) -> List[Song]:
         """Extract tracks from Spotify URL"""
@@ -585,8 +624,8 @@ class AudioManager:
             self.alone_timers[guild_id].cancel()
             self.alone_timers.pop(guild_id, None)
     
-    async def validate_queue_songs(self, guild_id: int, max_check: int = 10) -> int:
-        """Validate and clean up queue songs, return number of songs removed"""
+    async def validate_queue_songs(self, guild_id: int, max_check: int = 50) -> int:
+        """Validate and clean up queue songs, return number of songs removed (Async & Non-blocking)"""
         queue = self.get_queue(guild_id)
         if not queue:
             return 0
@@ -598,23 +637,31 @@ class AudioManager:
         check_count = min(max_check, len(queue))
         songs_to_remove = []
         
-        for i in range(check_count):
-            if i < len(queue):
-                song = queue[i]
-                # Skip currently playing song
-                if i == current_idx:
-                    continue
+        try:
+            for i in range(check_count):
+                # Yield control every 10 items to prevent blocking
+                if i > 0 and i % 10 == 0:
+                    await asyncio.sleep(0)
+                    
+                if i < len(queue):
+                    song = queue[i]
+                    # Skip currently playing song
+                    if i == current_idx:
+                        continue
+                    
+                    # Check for obvious invalid songs
+                    if (not song.title or song.title.lower() in ['deleted video', 'private video', 'unavailable'] or
+                        'deleted' in song.title.lower() or 'private' in song.title.lower()):
+                        songs_to_remove.append(i)
+            
+            # Remove invalid songs (in reverse order to maintain indices)
+            for idx in reversed(songs_to_remove):
+                self.remove_song(guild_id, idx)
+                removed_count += 1
                 
-                # Check for obvious invalid songs
-                if (not song.title or song.title.lower() in ['deleted video', 'private video', 'unavailable'] or
-                    'deleted' in song.title.lower() or 'private' in song.title.lower()):
-                    songs_to_remove.append(i)
-        
-        # Remove invalid songs (in reverse order to maintain indices)
-        for idx in reversed(songs_to_remove):
-            self.remove_song(guild_id, idx)
-            removed_count += 1
-        
+        except Exception as e:
+            logger.error("validate_queue_songs", e, guild_id=guild_id)
+            
         return removed_count
     
     # Autoplay functionality
@@ -711,6 +758,10 @@ class AudioManager:
                 if len(songs) >= count:
                     break
             
+            # Pre-fetch the first recommendation in background to reduce latency
+            if songs:
+                asyncio.create_task(self.resolve_lazy_song(songs[0]))
+                
             logger.info(f"Generated {len(songs)} unique autoplay recommendations for guild {guild_id}")
             return songs
             

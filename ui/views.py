@@ -90,45 +90,47 @@ class NowPlayingView(ui.View):
         """Handle previous song button"""
         try:
             if not audio_manager.previous_song(self.guild_id):
-                await interaction.response.send_message("❌ No previous song available.", ephemeral=True)
+                await interaction.response.send_message("❌ Peeche kuch hai hi nahi bhai, kahan jaaun?", ephemeral=True)
                 return
             
             # Stop current song to trigger automatic next song play
             if self.ctx.voice_client and (self.ctx.voice_client.is_playing() or self.ctx.voice_client.is_paused()):
                 self.ctx.voice_client.stop()
             
-            await interaction.response.send_message("⏮️ Going to previous song", ephemeral=True)
+            await interaction.response.send_message("⏮️ **Rewind time!** Peeche wala gaana wapas!", ephemeral=True)
             
             # Update button states
             self.update_buttons()
             try:
                 await interaction.edit_original_response(view=self)
-            except:
-                pass  # Message might be ephemeral
+            except discord.HTTPException as e:
+                logger.debug(f"Could not edit message: {e}")
+            except Exception as e:
+                logger.error("prev_song_edit_error", e)
                 
         except Exception as e:
             logger.error("prev_song_button", e, guild_id=self.guild_id)
             try:
-                await interaction.response.send_message("❌ An error occurred while going to previous song.", ephemeral=True)
+                await interaction.response.send_message("❌ Arre yaar, previous song mein kuch locha ho gaya.", ephemeral=True)
             except:
-                await interaction.followup.send("❌ An error occurred while going to previous song.", ephemeral=True)
+                await interaction.followup.send("❌ Arre yaar, previous song mein kuch locha ho gaya.", ephemeral=True)
     
     async def play_pause(self, interaction: discord.Interaction):
         """Handle play/pause button"""
         try:
             vc = self.ctx.voice_client
             if not vc:
-                await interaction.response.send_message("❌ I'm not in a voice channel.", ephemeral=True)
+                await interaction.response.send_message("❌ Main voice channel mein nahi hoon!", ephemeral=True)
                 return
             
             if vc.is_playing():
                 vc.pause()
-                await interaction.response.send_message("⏸️ Paused", ephemeral=True)
+                await interaction.response.send_message("⏸️ **Thoda saans le lo!** Paused.", ephemeral=True)
             elif vc.is_paused():
                 vc.resume()
-                await interaction.response.send_message("▶️ Resumed", ephemeral=True)
+                await interaction.response.send_message("▶️ **Chalo wapas shuru!** Resumed.", ephemeral=True)
             else:
-                await interaction.response.send_message("❌ Nothing is playing.", ephemeral=True)
+                await interaction.response.send_message("❌ Kuch baj hi nahi raha, kya pause karu?", ephemeral=True)
                 return
             
             # Update button states
@@ -139,15 +141,15 @@ class NowPlayingView(ui.View):
                 # Get the message from the UI manager
                 from ui.views import ui_manager
                 await ui_manager.update_now_playing_buttons(self.ctx, self)
-            except:
-                pass  # Fallback: don't update if there's an issue
+            except Exception as e:
+                logger.warning(f"Failed to update now playing buttons: {e}")
             
         except Exception as e:
             logger.error("play_pause_button", e, guild_id=self.guild_id)
             try:
                 await interaction.response.send_message("❌ An error occurred.", ephemeral=True)
             except:
-                await interaction.followup.send("❌ An error occurred.", ephemeral=True)
+                await interaction.followup.send("❌ Kuch gadbad ho gayi yaar.", ephemeral=True)
     
     async def skip(self, interaction: discord.Interaction):
         """Handle skip button"""
@@ -156,7 +158,7 @@ class NowPlayingView(ui.View):
             current_idx = audio_manager.guild_current_index.get(self.guild_id, 0)
             
             if not queue or current_idx >= len(queue) - 1:
-                await interaction.response.send_message("❌ No next song available.", ephemeral=True)
+                await interaction.response.send_message("❌ Aage kuch nahi hai bhai! End of the road.", ephemeral=True)
                 return
             
             # Stop current song to trigger automatic next song play
@@ -168,7 +170,7 @@ class NowPlayingView(ui.View):
                     from commands.music import play_current_song
                     await play_current_song(self.ctx)
             
-            await interaction.response.send_message("⏭️ Skipped to next song", ephemeral=True)
+            await interaction.response.send_message("⏭️ **Next please!** Ye wala skip kar diya.", ephemeral=True)
             
             # Update button states
             self.update_buttons()
@@ -176,9 +178,9 @@ class NowPlayingView(ui.View):
         except Exception as e:
             logger.error("skip_button", e, guild_id=self.guild_id)
             try:
-                await interaction.response.send_message("❌ An error occurred while skipping.", ephemeral=True)
+                await interaction.response.send_message("❌ Skip mein error aa gaya.", ephemeral=True)
             except:
-                await interaction.followup.send("❌ An error occurred while skipping.", ephemeral=True)
+                await interaction.followup.send("❌ Skip mein error aa gaya.", ephemeral=True)
     
     async def stop(self, interaction: discord.Interaction):
         """Handle stop button"""
@@ -186,9 +188,9 @@ class NowPlayingView(ui.View):
             if self.ctx.voice_client and (self.ctx.voice_client.is_playing() or self.ctx.voice_client.is_paused()):
                 audio_manager.clear_queue(self.guild_id)
                 self.ctx.voice_client.stop()
-                await interaction.response.send_message("⏹️ Stopped playback and cleared queue.", ephemeral=True)
+                await interaction.response.send_message("⏹️ **Sab band!** Queue saaf, music band.", ephemeral=True)
             else:
-                await interaction.response.send_message("Nothing is playing.", ephemeral=True)
+                await interaction.response.send_message("Kuch chal hi nahi raha hai.", ephemeral=True)
                 
         except Exception as e:
             logger.error("stop_button", e, guild_id=self.guild_id)
@@ -203,7 +205,8 @@ class NowPlayingView(ui.View):
             
             status = "ON" if new_repeat else "OFF"
             emoji = "🔂" if new_repeat else "🔁"
-            await interaction.response.send_message(f"{emoji} Repeat is now **{status}**", ephemeral=True)
+            msg = "Bas yehi sunna hai ab!" if new_repeat else "Chalo aage badhte hain!"
+            await interaction.response.send_message(f"{emoji} Repeat **{status}**! {msg}", ephemeral=True)
             
             # Update button states
             self.update_buttons()
@@ -212,8 +215,8 @@ class NowPlayingView(ui.View):
             try:
                 from ui.views import ui_manager
                 await ui_manager.update_now_playing_buttons(self.ctx, self)
-            except:
-                pass  # Fallback: don't update if there's an issue
+            except Exception as e:
+                logger.warning(f"Failed to update now playing buttons: {e}")
             
         except Exception as e:
             logger.error("repeat_button", e, guild_id=self.guild_id)
@@ -235,9 +238,9 @@ class NowPlayingView(ui.View):
             
             status = "ON" if new_autoplay else "OFF"
             emoji = "🔥" if new_autoplay else "💤"
+            desc = "Ab rukega nahi bhajana!" if new_autoplay else "Queue khatam, party khatam."
             await interaction.response.send_message(
-                f"{emoji} Autoplay is now **{status}**\n"
-                f"{'Music will continue playing automatically when the queue ends!' if new_autoplay else 'Bot will stop when queue ends.'}",
+                f"{emoji} Autoplay **{status}**! {desc}",
                 ephemeral=True
             )
             
@@ -253,10 +256,14 @@ class NowPlayingView(ui.View):
             
         except Exception as e:
             logger.error("autoplay_button", e, guild_id=self.guild_id)
+        except discord.HTTPException as e:
+            logger.warning(f"Failed to edit autoplay button response: {e}")
+        except Exception as e:
+            logger.error("autoplay_button_error", e, guild_id=self.guild_id)
             try:
-                await interaction.response.send_message("❌ An error occurred.", ephemeral=True)
-            except:
                 await interaction.followup.send("❌ An error occurred.", ephemeral=True)
+            except:
+                pass
 
 
 class QueueView(ui.View):
@@ -319,7 +326,7 @@ class QueueView(ui.View):
         if not queue:
             embed = Embed(
                 title="🎵 Queue", 
-                description="The queue is empty. Add some songs!",
+                description="Queue bilkul khaali hai! Kuch add karo na! 🎵",
                 color=0x2b2d31
             )
             return embed
@@ -390,9 +397,9 @@ class QueueView(ui.View):
                 embed = self.create_queue_embed()
                 await interaction.response.edit_message(embed=embed, view=self)
             else:
-                await interaction.response.send_message("Already on the current song's page!", ephemeral=True)
+                await interaction.response.send_message("Arre, isi page pe toh ho! 😅", ephemeral=True)
         else:
-            await interaction.response.send_message("No song is currently playing.", ephemeral=True)
+            await interaction.response.send_message("Koi gaana nahi baj raha abhi.", ephemeral=True)
 
 
 class UIManager:
@@ -418,7 +425,7 @@ class UIManager:
             # Autoplay Tip above the embed
             is_autoplay = audio_manager.is_autoplay_enabled(guild_id)
             ap_status = "ON 🔥" if is_autoplay else "OFF 💤"
-            tip_content = f"**Tip:** Want non-stop music? Type `!ap` to toggle Autoplay! (Current: {ap_status})"
+            tip_content = f"**Tip:** Non-stop music chahiye? `!ap` type karke Autoplay on karlo! (Abhi: {ap_status})"
             
             if current_song.thumbnail:
                 embed.set_thumbnail(url=current_song.thumbnail)
@@ -430,17 +437,11 @@ class UIManager:
                     inline=True
                 )
             
-                embed.add_field(
-                    name="Duration", 
-                    value=current_song.format_duration(),
-                    inline=True
-                )
-            
             # Add Autoplay status and instruction to footer
             is_autoplay = audio_manager.is_autoplay_enabled(guild_id)
             ap_status = "ON" if is_autoplay else "OFF"
             ap_icon = "🔥" if is_autoplay else "💤"
-            embed.set_footer(text=f"Autoplay: {ap_status} {ap_icon} • Type !ap or !auto to automatically play related songs!")
+            embed.set_footer(text=f"Autoplay: {ap_status} {ap_icon} • '!ap' use karke non-stop bajao!")
             
             view = NowPlayingView(ctx)
             message = await ctx.send(content=tip_content, embed=embed, view=view)

@@ -15,15 +15,40 @@ from datetime import datetime
 
 # Initialize Flask app
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "super-secret-key-change-this")
+
+# Secure secret key configuration
+flask_secret = os.getenv("FLASK_SECRET_KEY")
+if not flask_secret:
+    # Generate a secure random key for this session
+    flask_secret = secrets.token_hex(32)
+    logger.warning(
+        "FLASK_SECRET_KEY not set - using generated key. "
+        "Sessions will NOT persist across restarts! "
+        "Set FLASK_SECRET_KEY environment variable for production."
+    )
+app.secret_key = flask_secret
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 
 # Hide Werkzeug logs
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
-# Admin PIN for remote control (defaults to 1234 if not set)
-ADMIN_PIN = os.getenv("ADMIN_PIN", "1234")
+# Admin PIN for remote control (REQUIRED for security)
+ADMIN_PIN = os.getenv("ADMIN_PIN")
+if not ADMIN_PIN:
+    logger.error(
+        "ADMIN_PIN environment variable is NOT set! "
+        "Dashboard remote control will be DISABLED for security. "
+        "Please set ADMIN_PIN to a secure value (minimum 6 characters)."
+    )
+    ADMIN_PIN = secrets.token_hex(16)  # Random unusable PIN if not configured
+
+# Validate PIN strength if set
+if ADMIN_PIN and len(ADMIN_PIN) < 6:
+    logger.warning(
+        f"ADMIN_PIN is too short ({len(ADMIN_PIN)} chars). "
+        "Please use at least 6 characters for better security."
+    )
 
 # Basic auth helper
 def check_auth(pin):

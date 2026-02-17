@@ -54,10 +54,14 @@ class StatsManager:
         self._plays_cache: List[dict] = []
         self._server_stats_cache: Dict[str, dict] = {}
         self._last_persist_ts: float = 0.0
-        self._persist_interval_sec: float = 5.0
+        self._persist_interval_sec: float = 30.0  # Increased from 5.0 to reduce I/O
         self._pending_writes: int = 0
         # Load existing data into memory
         self._load_existing()
+        
+    # Constants
+    MAX_PLAY_AGE_DAYS = 30
+    MAX_PLAYS_CACHE = 10000
     
     def _ensure_stats_dir(self):
         """Create stats directory if it doesn't exist"""
@@ -150,20 +154,71 @@ class StatsManager:
         """Persist caches to disk if interval or batch threshold reached."""
         import time
         now = time.time()
-        if (now - self._last_persist_ts) >= self._persist_interval_sec or self._pending_writes >= 20:
+        if (now - self._last_persist_ts) >= self._persist_interval_sec or self._pending_writes >= 50:
+            # Clean up old plays before saving
+            self._cleanup_old_plays()
             await self._persist_to_disk()
             self._last_persist_ts = now
             self._pending_writes = 0
+            
+    def _cleanup_old_plays(self):
+        """Remove plays older than MAX_PLAY_AGE_DAYS to save memory"""
+        try:
+            cutoff = datetime.now() - timedelta(days=StatsManager.MAX_PLAY_AGE_DAYS)
+            
+            # Filter old plays
+            current_plays = []
+            archived_plays = []
+            
+            for play in self._plays_cache:
+                try:
+                    play_ts = datetime.fromisoformat(play.get('timestamp', ''))
+                    if play_ts > cutoff:
+                        current_plays.append(play)
+                    else:
+                        archived_plays.append(play)
+                except ValueError:
+                    # Invalid timestamp, discard
+                    continue
+            
+            # Update cache
+            self._plays_cache = current_plays
+            
+            # Archive old plays if any
+            if archived_plays:
+                try:
+                    archive_file = os.path.join(self.stats_dir, "song_plays_archive.json")
+                    existing_archive = []
+                    
+                    if os.path.exists(archive_file):
+                        with open(archive_file, 'r', encoding='utf-8') as f:
+                            existing_archive = json.load(f)
+                            
+                    existing_archive.extend(archived_plays)
+                    
+                    with open(archive_file, 'w', encoding='utf-8') as f:
+                        json.dump(existing_archive, f, indent=2, ensure_ascii=False)
+                        
+                    logger.info(f"Archived {len(archived_plays)} old stats entries")
+                except Exception as e:
+                    logger.error("archive_old_plays", e)
+            
+            # Enforce hard limit on active cache
+            if len(self._plays_cache) > StatsManager.MAX_PLAYS_CACHE:
+                # Remove oldest from active cache without archiving (assume already handled or least relevant)
+                removed_count = len(self._plays_cache) - StatsManager.MAX_PLAYS_CACHE
+                self._plays_cache = self._plays_cache[-StatsManager.MAX_PLAYS_CACHE:]
+                logger.info(f"Trimmed {removed_count} plays from active cache to maintain limit")
+                
+        except Exception as e:
+            logger.error("cleanup_old_plays", e)
     
     async def _persist_to_disk(self):
         """Write in-memory caches to disk (atomic best-effort)."""
         try:
             # Persist plays
-            plays = self._plays_cache
-            if len(plays) > 10000:
-                plays = plays[-10000:]
             with open(self.plays_file, 'w', encoding='utf-8') as f:
-                json.dump(plays, f, indent=2, ensure_ascii=False)
+                json.dump(self._plays_cache, f, indent=2, ensure_ascii=False)
             
             # Persist server stats
             with open(self.server_stats_file, 'w', encoding='utf-8') as f:

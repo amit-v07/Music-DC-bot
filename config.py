@@ -44,7 +44,13 @@ class BotConfig:
     # Autoplay settings
     autoplay_songs_per_batch: int = 5  # How many songs to add when queue ends
     autoplay_max_history: int = 20  # Max recent songs to track per server
+    autoplay_songs_per_batch: int = 5  # How many songs to add when queue ends
+    autoplay_max_history: int = 20  # Max recent songs to track per server
     autoplay_enabled_by_default: bool = False
+    
+    # Resource Management
+    max_memory_mb: int = 500  # Max memory before forced GC
+    resource_cleanup_interval: int = 300  # Seconds between resource checks
     
     def __post_init__(self):
         """Initialize default options after dataclass creation"""
