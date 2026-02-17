@@ -62,7 +62,7 @@ class BotConfig:
         
         if self.ydl_options is None:
             self.ydl_options = {
-                'format': 'bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a]/bestaudio/best',
+                'format': 'bestaudio/best',
                 'quiet': True,
                 'extract_flat': False,
                 'noplaylist': True,  # Default to single video, will be overridden for playlists
