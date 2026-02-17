@@ -36,7 +36,7 @@ log.setLevel(logging.ERROR)
 # Admin PIN for remote control (REQUIRED for security)
 ADMIN_PIN = os.getenv("ADMIN_PIN")
 if not ADMIN_PIN:
-    logger.error(
+    logger.warning(
         "ADMIN_PIN environment variable is NOT set! "
         "Dashboard remote control will be DISABLED for security. "
         "Please set ADMIN_PIN to a secure value (minimum 6 characters)."

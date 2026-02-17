@@ -14,6 +14,7 @@ from audio.manager import audio_manager, Song
 from utils.ai_brain import ai_brain
 from utils.listening_history import listening_history
 from utils.limiter import play_limiter, control_limiter
+from ui.views import ui_manager
 
 
 class MusicCog(commands.Cog):
