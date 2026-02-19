@@ -214,15 +214,18 @@ class StatsManager:
             logger.error("cleanup_old_plays", e)
     
     async def _persist_to_disk(self):
-        """Write in-memory caches to disk (atomic best-effort)."""
+        """Write in-memory caches to disk without blocking the event loop."""
         try:
-            # Persist plays
-            with open(self.plays_file, 'w', encoding='utf-8') as f:
-                json.dump(self._plays_cache, f, indent=2, ensure_ascii=False)
+            plays_data = list(self._plays_cache)
+            stats_data = dict(self._server_stats_cache)
             
-            # Persist server stats
-            with open(self.server_stats_file, 'w', encoding='utf-8') as f:
-                json.dump(self._server_stats_cache, f, indent=2, ensure_ascii=False)
+            def _write():
+                with open(self.plays_file, 'w', encoding='utf-8') as f:
+                    json.dump(plays_data, f, indent=2, ensure_ascii=False)
+                with open(self.server_stats_file, 'w', encoding='utf-8') as f:
+                    json.dump(stats_data, f, indent=2, ensure_ascii=False)
+            
+            await asyncio.to_thread(_write)
         except Exception as e:
             logger.error("persist_to_disk", e)
     
@@ -252,7 +255,7 @@ class StatsManager:
         stats.recent_plays = self._count_recent_plays_from_cache(guild_id)
         
         # Update timestamp
-        stats.last_updated = datetime.now().isoformat()
+        stats.last_updated = datetime.now().isoformat()             
         
         # Save back to cache
         self._server_stats_cache[key] = asdict(stats)
@@ -272,6 +275,26 @@ class StatsManager:
         except Exception as e:
             logger.error("get_server_stats", e, guild_id=guild_id)
             return ServerStats(guild_id=guild_id)
+    
+    async def reset_server_stats(self, guild_id: int):
+        """Reset all statistics for a specific server"""
+        async with self._lock:
+            try:
+                key = str(guild_id)
+                # Remove from server stats cache
+                self._server_stats_cache.pop(key, None)
+                
+                # Remove plays for this guild from cache
+                self._plays_cache = [
+                    play for play in self._plays_cache
+                    if play.get('guild_id') != guild_id
+                ]
+                
+                # Persist changes
+                await self._persist_to_disk()
+                logger.info(f"Reset stats for guild {guild_id}")
+            except Exception as e:
+                logger.error("reset_server_stats", e, guild_id=guild_id)
     
     def _count_recent_plays_from_cache(self, guild_id: int) -> int:
         """Count plays in the last 24 hours using in-memory cache."""
@@ -442,14 +465,6 @@ class StatsManager:
         """Queue an action for the bot to execute"""
         async with self._lock:
             try:
-                actions = []
-                if os.path.exists(self.actions_file):
-                    try:
-                        with open(self.actions_file, 'r', encoding='utf-8') as f:
-                            actions = json.load(f)
-                    except Exception:
-                        actions = []
-                
                 new_action = {
                     'guild_id': guild_id,
                     'action': action,
@@ -458,10 +473,21 @@ class StatsManager:
                     'id': str(os.urandom(4).hex()) 
                 }
                 
-                actions.append(new_action)
+                def _write_action():
+                    actions = []
+                    if os.path.exists(self.actions_file):
+                        try:
+                            with open(self.actions_file, 'r', encoding='utf-8') as f:
+                                actions = json.load(f)
+                        except Exception:
+                            actions = []
+                    
+                    actions.append(new_action)
+                    
+                    with open(self.actions_file, 'w', encoding='utf-8') as f:
+                        json.dump(actions, f, indent=2)
                 
-                with open(self.actions_file, 'w', encoding='utf-8') as f:
-                    json.dump(actions, f, indent=2)
+                await asyncio.to_thread(_write_action)
                     
                 logger.info(f"Queued action '{action}' for guild {guild_id}")
                 return True
@@ -473,20 +499,23 @@ class StatsManager:
         """Get and clear pending actions for the bot to execute"""
         async with self._lock:
             try:
-                if not os.path.exists(self.actions_file):
-                    return []
+                def _read_and_clear():
+                    if not os.path.exists(self.actions_file):
+                        return []
+                    
+                    with open(self.actions_file, 'r', encoding='utf-8') as f:
+                        actions = json.load(f)
+                    
+                    if not actions:
+                        return []
+                    
+                    # Clear the file (consume actions)
+                    with open(self.actions_file, 'w', encoding='utf-8') as f:
+                        json.dump([], f)
+                    
+                    return actions
                 
-                with open(self.actions_file, 'r', encoding='utf-8') as f:
-                    actions = json.load(f)
-                
-                if not actions:
-                    return []
-                
-                # Clear the file (consume actions)
-                with open(self.actions_file, 'w', encoding='utf-8') as f:
-                    json.dump([], f)
-                
-                return actions
+                return await asyncio.to_thread(_read_and_clear)
             except Exception as e:
                 logger.error("get_pending_actions", e)
                 return []

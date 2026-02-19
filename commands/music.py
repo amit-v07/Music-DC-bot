@@ -6,6 +6,7 @@ import asyncio
 import discord
 from discord.ext import commands
 import yt_dlp
+import time
 from typing import List, Optional
 from config import config
 from utils.logger import logger, log_command_usage, log_audio_event
@@ -188,25 +189,24 @@ class MusicCog(commands.Cog):
             ydl_opts['default_search'] = 'ytsearch1'
             ydl_opts['noplaylist'] = True
         
-        def _extract_info():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(query, download=False)
-                entries = info.get('entries', [info]) if 'entries' in info else [info]
-                
-                extracted_songs = []
-                for entry in entries:
-                    if entry:
-                        extracted_songs.append(Song(
-                            title=entry.get('title', 'Unknown'),
-                            webpage_url=entry.get('webpage_url') or entry.get('url'),
-                            duration=entry.get('duration'),
-                            thumbnail=entry.get('thumbnail'),
-                            requester_id=user_id,
-                            is_lazy=True,
-                            requester_name="Unknown" # Will be updated when actually played if we had context, but here we don't have ctx easily
-                        ))
-                
-                return extracted_songs
+        def _build_songs(info):
+            """Build Song objects from extracted info"""
+            entries = info.get('entries', [info]) if 'entries' in info else [info]
+            
+            extracted_songs = []
+            for entry in entries:
+                if entry:
+                    extracted_songs.append(Song(
+                        title=entry.get('title', 'Unknown'),
+                        webpage_url=entry.get('webpage_url') or entry.get('url'),
+                        duration=entry.get('duration'),
+                        thumbnail=entry.get('thumbnail'),
+                        requester_id=user_id,
+                        is_lazy=True,
+                        requester_name="Unknown" # Will be updated when actually played if we had context, but here we don't have ctx easily
+                    ))
+            
+            return extracted_songs
         
         # Run in executor to avoid blocking, wrapped in circuit breaker
         try:
@@ -221,7 +221,10 @@ class MusicCog(commands.Cog):
                         raise CircuitBreakerOpen("YouTube API circuit is OPEN. Please wait.")
                 
                 try:
-                    result = await loop.run_in_executor(None, _extract_info)
+                    # Use connection pool to limit concurrent yt-dlp operations
+                    from utils.connection_pool import ytdlp_pool
+                    info = await ytdlp_pool.execute(ydl_opts, query, download=False)
+                    result = _build_songs(info) if info else []
                     
                     if youtube_circuit_breaker.state == "HALF_OPEN":
                          youtube_circuit_breaker.state = "CLOSED"
@@ -520,9 +523,22 @@ class MusicCog(commands.Cog):
         # Handle removing currently playing song
         current_idx = audio_manager.guild_current_index.get(ctx.guild.id, 0)
         if index == current_idx:
+            # Stop playback first (without triggering next song via handle_song_end)
+            removed_title = queue[index].title
             if ctx.voice_client and (ctx.voice_client.is_playing() or ctx.voice_client.is_paused()):
                 ctx.voice_client.stop()
-            await ctx.send(f"⏭️ Jo baj raha tha usse hi uda diya!")
+            
+            # Actually remove the song from the queue
+            audio_manager.remove_song(ctx.guild.id, index)
+            await ctx.send(f"🗑️ Uda diya: **{removed_title}**")
+            
+            # Play the next song (now at the same index after removal) if available
+            new_queue = audio_manager.get_queue(ctx.guild.id)
+            new_idx = audio_manager.guild_current_index.get(ctx.guild.id, 0)
+            if new_queue and 0 <= new_idx < len(new_queue):
+                await play_current_song(ctx)
+            
+            await ui_manager.update_queue(ctx)
         else:
             removed_song = audio_manager.remove_song(ctx.guild.id, index)
             if removed_song:
@@ -553,8 +569,9 @@ class MusicCog(commands.Cog):
             return
         
         if audio_manager.move_song(ctx.guild.id, from_idx, to_idx):
-            song_title = queue[to_idx].title
-            await ctx.send(f"🔄 **{song_title}** ko position {to_pos} pe bhej diya!")
+            # Note: move_song already mutated the queue, but the moved song is now at to_idx
+            moved_song = audio_manager.get_queue(ctx.guild.id)[to_idx]
+            await ctx.send(f"🔄 **{moved_song.title}** ko position {to_pos} pe bhej diya!")
             await ui_manager.update_queue(ctx)
             log_audio_event(ctx.guild.id, "moved_song")
         else:
@@ -771,8 +788,9 @@ async def play_current_song(ctx):
             await ui_manager.update_all_ui(ctx)
             return
         
-        if not ctx.voice_client:
-            await ctx.send("❌ I'm not in a voice channel!")
+        if not ctx.voice_client or not ctx.voice_client.is_connected():
+            logger.warning("play_current_song: Not connected to voice", guild_id=guild_id)
+            await ctx.send("⚠️ **Not connected to voice!** Use `!join` to connect first.")
             return
         
         # Check if already playing to avoid "Already playing audio" error
@@ -788,13 +806,9 @@ async def play_current_song(ctx):
                 if error:
                     logger.error("audio_playback", Exception(str(error)), guild_id=guild_id)
                 
-                # Schedule next song
-                if ctx.voice_client:
-                    fut = asyncio.run_coroutine_threadsafe(handle_song_end(ctx), ctx.bot.loop)
-                    try:
-                        fut.result()
-                    except Exception as e:
-                        logger.error("after_playing_future", e, guild_id=guild_id)
+                # Schedule next song (fire-and-forget, do NOT block with fut.result())
+                if ctx.voice_client and ctx.voice_client.is_connected():
+                    asyncio.run_coroutine_threadsafe(handle_song_end(ctx), ctx.bot.loop)
             
             # Start playback
             ctx.voice_client.play(source, after=after_playing)
@@ -830,7 +844,7 @@ async def play_current_song(ctx):
             try:
                 # Use original_url (YouTube URL) for recommendations, fallback to webpage_url if not set
                 history_url = current_song.original_url or current_song.webpage_url
-                listening_history.record_play(
+                await listening_history.record_play(
                     guild_id=guild_id,
                     title=current_song.title,
                     url=history_url,
@@ -845,6 +859,18 @@ async def play_current_song(ctx):
             
             log_audio_event(guild_id, "song_started", current_song.title)
             return  # Successfully started playing
+            
+        except discord.ClientException as e:
+            if "Not connected to voice" in str(e):
+                logger.error("Voice connection lost during play", guild_id=guild_id)
+                await ctx.send("⚠️ **Connection lost!** Stopping playback to preserve queue. Use `!join` to reconnect, then `!play`.")
+                return # Stop completely, preserving queue
+            
+            # Other ClientExceptions (e.g. Already playing)
+            logger.error("ClientException in play_current_song", e, guild_id=guild_id)
+            retry_count += 1
+            await asyncio.sleep(1)
+            continue
             
         except Exception as e:
             retry_count += 1
@@ -928,10 +954,11 @@ async def handle_song_end(ctx):
                     recommendations = await audio_manager.get_autoplay_recommendations(guild_id, count=5)
                     
                     if recommendations:
-                        # Add to queue (this sets current_index to 0 since queue was empty)
+                        # Clear old queue first so add_songs resets index to 0
+                        audio_manager.clear_queue(guild_id)
                         audio_manager.add_songs(guild_id, recommendations)
                         
-                        # Start playing first recommendation (already at index 0, no need to call next_song)
+                        # Start playing first recommendation (index is 0)
                         await play_current_song(ctx)
                         
                         # AI Response for adding songs

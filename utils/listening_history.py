@@ -4,6 +4,7 @@ Tracks recently played songs per server to provide context for recommendations
 """
 import json
 import os
+import asyncio
 from typing import List, Optional, Dict
 from datetime import datetime
 from dataclasses import dataclass, asdict
@@ -38,9 +39,9 @@ class ListeningHistoryManager:
         """Get the history file path for a guild"""
         return os.path.join(self.history_dir, f"{guild_id}_history.json")
     
-    def record_play(self, guild_id: int, title: str, url: str, requester_id: int, duration: Optional[int] = None):
+    async def record_play(self, guild_id: int, title: str, url: str, requester_id: int, duration: Optional[int] = None):
         """
-        Record when a song is played
+        Record when a song is played (non-blocking)
         
         Args:
             guild_id: Discord guild ID
@@ -51,7 +52,7 @@ class ListeningHistoryManager:
         """
         try:
             # Load existing history
-            history = self._load_history(guild_id)
+            history = await self._load_history_async(guild_id)
             
             # Create new entry
             entry = HistoryEntry(
@@ -69,8 +70,8 @@ class ListeningHistoryManager:
             if len(history) > self.max_history_size:
                 history = history[:self.max_history_size]
             
-            # Save updated history
-            self._save_history(guild_id, history)
+            # Save updated history (non-blocking)
+            await self._save_history_async(guild_id, history)
             
             logger.info(f"Recorded play history for guild {guild_id}: {title}")
             
@@ -143,7 +144,7 @@ class ListeningHistoryManager:
             return []
     
     def _save_history(self, guild_id: int, history: List[HistoryEntry]):
-        """Save history to JSON file"""
+        """Save history to JSON file (synchronous)"""
         history_file = self._get_history_file(guild_id)
         
         try:
@@ -155,6 +156,14 @@ class ListeningHistoryManager:
                 
         except Exception as e:
             logger.error("_save_history", e, guild_id=guild_id)
+    
+    async def _load_history_async(self, guild_id: int) -> List[HistoryEntry]:
+        """Load history from JSON file without blocking the event loop"""
+        return await asyncio.to_thread(self._load_history, guild_id)
+    
+    async def _save_history_async(self, guild_id: int, history: List[HistoryEntry]):
+        """Save history to JSON file without blocking the event loop"""
+        await asyncio.to_thread(self._save_history, guild_id, history)
 
 
 # Global listening history manager instance

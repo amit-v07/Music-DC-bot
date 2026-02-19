@@ -4,6 +4,9 @@
 
 import os
 import secrets
+import asyncio
+import threading
+import time
 from flask import Flask, render_template, jsonify, request, session
 from flask_socketio import SocketIO, emit
 import psutil
@@ -11,6 +14,27 @@ import logging
 from config import config
 from utils.logger import logger
 from utils.stats_manager import stats_manager
+
+def _run_async(coro):
+    """Safely run an async coroutine from synchronous Flask context."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If there's already a running loop, create a new one in this thread
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                loop.close()
+        else:
+            return loop.run_until_complete(coro)
+    except RuntimeError:
+        # No event loop exists in this thread
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
 from datetime import datetime
 
 # Initialize Flask app
@@ -61,7 +85,7 @@ def index():
 @app.route('/api/stats')
 def get_stats():
     """API endpoint for raw stats"""
-    stats = asyncio.run(stats_manager.get_global_stats())
+    stats = _run_async(stats_manager.get_global_stats())
     return jsonify(stats)
 
 @app.route('/api/control', methods=['POST'])
@@ -78,8 +102,10 @@ def remote_control():
     if not action or not guild_id:
         return jsonify({'success': False, 'error': 'Missing action or guild_id'}), 400
         
+    payload = data.get('data', {})
+        
     try:
-        success = asyncio.run(stats_manager.queue_action(int(guild_id), action))
+        success = _run_async(stats_manager.queue_action(int(guild_id), action, payload))
         if success:
             return jsonify({'success': True, 'message': f'Action {action} queued'})
         else:
@@ -107,16 +133,13 @@ def handle_connect():
     emit('status', {'msg': 'Connected to dashboard backend'})
 
 # Background task to push updates
-import threading
-import time
-import asyncio
 
 def background_stats_update():
     """Background task to push stats to clients"""
     while True:
         try:
             # Fetch fresh stats
-            stats = asyncio.run(_fetch_fresh_stats())
+            stats = _run_async(_fetch_fresh_stats())
             
             # Emit to all clients
             socketio.emit('stats_update', stats)

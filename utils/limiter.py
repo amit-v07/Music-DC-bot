@@ -49,6 +49,16 @@ class RateLimiter:
         
         # Record new request
         self.requests[user_id].append(now)
+        
+        # Periodic cleanup: remove inactive users to prevent unbounded memory growth
+        if len(self.requests) > 1000:
+            stale_users = [
+                uid for uid, timestamps in self.requests.items()
+                if not timestamps or now - timestamps[-1] > self.per * 10
+            ]
+            for uid in stale_users:
+                del self.requests[uid]
+        
         return True
 
 # Pre-configured limiters

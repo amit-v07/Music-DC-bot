@@ -10,10 +10,11 @@ from utils.logger import logger
 from audio.manager import audio_manager
 
 
+
 class NowPlayingView(ui.View):
     """Interactive controls for currently playing song"""
     
-    def __init__(self, ctx, timeout: float = None):
+    def __init__(self, ctx, timeout: float = 600):  # 10 minute timeout to prevent memory leak
         super().__init__(timeout=timeout)
         self.ctx = ctx
         self.guild_id = ctx.guild.id
@@ -93,9 +94,14 @@ class NowPlayingView(ui.View):
                 await interaction.response.send_message("❌ Peeche kuch hai hi nahi bhai, kahan jaaun?", ephemeral=True)
                 return
             
-            # Stop current song to trigger automatic next song play
+            # Stop current playback WITHOUT relying on after_playing callback
+            # (stop triggers handle_song_end → next_song which would cancel out the previous_song)
             if self.ctx.voice_client and (self.ctx.voice_client.is_playing() or self.ctx.voice_client.is_paused()):
                 self.ctx.voice_client.stop()
+            
+            # Directly play the previous song instead of relying on stop callback chain
+            from commands.music import play_current_song
+            await play_current_song(self.ctx)
             
             await interaction.response.send_message("⏮️ **Rewind time!** Peeche wala gaana wapas!", ephemeral=True)
             
@@ -256,14 +262,7 @@ class NowPlayingView(ui.View):
             
         except Exception as e:
             logger.error("autoplay_button", e, guild_id=self.guild_id)
-        except discord.HTTPException as e:
-            logger.warning(f"Failed to edit autoplay button response: {e}")
-        except Exception as e:
-            logger.error("autoplay_button_error", e, guild_id=self.guild_id)
-            try:
-                await interaction.followup.send("❌ An error occurred.", ephemeral=True)
-            except:
-                pass
+            await interaction.followup.send("❌ Error toggling autoplay.", ephemeral=True)
 
 
 class QueueView(ui.View):

@@ -18,7 +18,7 @@ class CacheEntry:
 
 
 class SongCache:
-    """Thread-safe LRU cache with TTL for song resolutions"""
+    """Async-safe LRU cache with TTL for song resolutions"""
     
     def __init__(self, max_size: int = 500, ttl_seconds: int = 21600):  # 6 hours default
         self.max_size = max_size

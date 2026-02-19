@@ -81,6 +81,7 @@ class AudioManager:
             self.guild_current_index[guild_id] = 0
         if guild_id not in self.guild_volumes:
             self.guild_volumes[guild_id] = config.default_volume
+
     
     def get_queue(self, guild_id: int) -> List[Song]:
         """Get queue for a guild"""
@@ -121,9 +122,9 @@ class AudioManager:
         if 0 <= index < len(queue):
             removed_song = queue.pop(index)
             
-            # Adjust current index if necessary
+            # Adjust current index if a song before the current one was removed
             current_idx = self.guild_current_index.get(guild_id, 0)
-            if index <= current_idx and current_idx > 0:
+            if index < current_idx and current_idx > 0:
                 self.guild_current_index[guild_id] = current_idx - 1
             
             logger.info(f"Removed song at index {index}: {removed_song.title}", guild_id=guild_id)
@@ -195,6 +196,8 @@ class AudioManager:
         """Get volume for a guild"""
         return self.guild_volumes.get(guild_id, config.default_volume)
     
+
+    
     def set_repeat(self, guild_id: int, repeat: bool):
         """Set repeat flag for a guild"""
         self.repeat_flags[guild_id] = repeat
@@ -220,10 +223,7 @@ class AudioManager:
         if current_idx < len(queue) - 1:
             self.guild_current_index[guild_id] = current_idx + 1
             return True
-        else:
-            # We are at the end, but increment anyway so we point to "next" (which might be empty now but filled later)
-            self.guild_current_index[guild_id] = len(queue)
-            return False
+        return False
     
     def previous_song(self, guild_id: int) -> bool:
         """Move to previous song, return True if successful"""
@@ -492,7 +492,8 @@ class AudioManager:
             raise ValueError(f"No playable URL found for {song.title}")
         
         # Create FFmpeg source with optimized options
-        source = discord.FFmpegPCMAudio(song.url, **config.ffmpeg_options)
+        options = config.ffmpeg_options.copy()
+        source = discord.FFmpegPCMAudio(song.url, **options)
         
         # Apply volume
         volume = self.get_volume(guild_id)

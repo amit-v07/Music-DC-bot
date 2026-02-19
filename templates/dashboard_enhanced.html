@@ -205,14 +205,18 @@
                                         <i class="fas fa-stop"></i> Stop
                                     </button>
                                 </div>
-                                <div id="action-feedback"></div>
                             </div>
+
+                            <div class="separator"></div>
+
+                            <div id="action-feedback"></div>
                         </div>
                     </div>
                 </div>
             </div>
+    </div>
 
-        </main>
+    </main>
     </div>
 
     <script>
@@ -445,7 +449,7 @@
             serverSelect.value = guildId;
         }
 
-        async function sendAction(action) {
+        async function sendAction(action, payload = null) {
             const pin = pinInput.value;
             const guildId = serverSelect.value;
             const feedback = document.getElementById('action-feedback');
@@ -469,7 +473,12 @@
                 const response = await fetch('/api/control', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pin, action, guild_id: guildId })
+                    body: JSON.stringify({
+                        pin,
+                        action,
+                        guild_id: guildId,
+                        data: payload || {}
+                    })
                 });
 
                 const data = await response.json();
@@ -490,6 +499,8 @@
                 if (feedback.className === 'success') feedback.textContent = '';
             }, 3000);
         }
+
+
 
         // Navigation Tabs
         document.querySelectorAll('.nav-item').forEach(item => {

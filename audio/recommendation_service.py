@@ -51,8 +51,7 @@ class YouTubeMusicRecommendationEngine:
     def _extract_video_id(self, url: str) -> Optional[str]:
         """Extract video ID from YouTube URL"""
         patterns = [
-            r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})',
-            r'([a-zA-Z0-9_-]{11})'  # Just the ID
+            r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/|music\.youtube\.com/watch\?v=)([a-zA-Z0-9_-]{11})',
         ]
         for pattern in patterns:
             match = re.search(pattern, url)
@@ -249,8 +248,78 @@ class YouTubeMusicRecommendationEngine:
                     logger.error("_fetch_ytdlp_recommendations", e)
                     return []
         
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _extract)
+        # Use connection pool to limit concurrent operations
+        try:
+            from utils.connection_pool import ytdlp_pool
+            
+            async def _pooled_extract():
+                video_url_to_resolve = video_url
+                
+                # First get video info for title
+                info = await ytdlp_pool.execute(ydl_opts, video_url_to_resolve, download=False)
+                if not info or 'title' not in info:
+                    logger.warning("Could not get video title")
+                    return []
+                
+                title = info['title']
+                video_id = info.get('id', '')
+                logger.info(f"yt-dlp: Got title: {title}")
+                
+                # Clean title for search
+                clean_title = title
+                for suffix in ['(Official Video)', '[Official Video]', '(Official Music Video)', 
+                               '(Lyric Video)', '(Audio)', '[Audio]', '(4K Remaster)',
+                               '(Lyrics)', '[Lyrics]', '| Official Video', '(Official Audio)']:
+                    clean_title = clean_title.replace(suffix, '')
+                clean_title = clean_title.strip()
+                
+                # Search for similar songs
+                search_query = f"{clean_title} song"
+                logger.info(f"yt-dlp: Searching for: {search_query}")
+                
+                search_opts = ydl_opts.copy()
+                search_results = await ytdlp_pool.execute(search_opts, f"ytsearch15:{search_query}", download=False)
+                
+                if not search_results or 'entries' not in search_results:
+                    logger.warning("yt-dlp search returned no results")
+                    return []
+                
+                entries = search_results['entries']
+                logger.info(f"yt-dlp: Found {len(entries)} search results")
+                
+                recommendations = []
+                for entry in entries:
+                    if not entry:
+                        continue
+                    
+                    entry_id = entry.get('id', '')
+                    if entry_id == video_id:
+                        continue  # Skip original video
+                    
+                    duration = entry.get('duration')
+                    if duration and duration > 900:  # Skip videos > 15 min
+                        continue
+                    
+                    url = entry.get('url') or f"https://www.youtube.com/watch?v={entry_id}"
+                    if not url.startswith('http'):
+                        url = f"https://www.youtube.com/watch?v={url}"
+                    
+                    recommendations.append(RecommendedSong(
+                        title=entry.get('title', 'Unknown'),
+                        video_url=url,
+                        duration=duration,
+                        thumbnail=entry.get('thumbnail'),
+                        relevance_score=0.5
+                    ))
+                
+                logger.info(f"yt-dlp: Processed {len(recommendations)} recommendations")
+                return recommendations
+            
+            return await _pooled_extract()
+        except ImportError:
+            # Fallback to direct execution if pool not available
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _extract)
     
     def _is_cached(self, video_url: str) -> bool:
         """Check if recommendations are cached and valid"""
