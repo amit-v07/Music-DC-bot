@@ -196,15 +196,15 @@ class MusicBot(commands.Bot):
         
         # Check for Opus library (critical for voice)
         if not discord.opus.is_loaded():
-            logger.warning("Opus library is NOT loaded! Voice features may fail.")
+            logger.info("Opus not pre-loaded, attempting to find and load...")
             try:
                 # Try to find library using ctypes
                 import ctypes.util
                 opus_path = ctypes.util.find_library('opus')
                 
                 if opus_path:
-                    logger.info(f"Found Opus library at: {opus_path}")
                     discord.opus.load_opus(opus_path)
+                    logger.info(f"Successfully loaded Opus from: {opus_path}")
                 else:
                     # Fallback for specific Linux architectures (including the user's aarch64)
                     possible_paths = [
@@ -225,50 +225,15 @@ class MusicBot(commands.Bot):
                             continue
                     
                     if not loaded:
-                        logger.error("Could not load Opus library. Voice will not work.")
+                        logger.error("Could not load Opus library. Voice will NOT work!")
             
             except Exception as e:
                 logger.error("opus_load_error", e)
         else:
             logger.info("Opus library is successfully loaded")
         
-        # One-time broadcast for new feature
-        import os
-        if not os.path.exists("broadcast_done.flag"):
-            logger.info("Starting one-time broadcast...")
-            message = (
-                "📢 **Hiii Friends!** 👋\n\n"
-                "Main wapas aa gayi hoon ek naye dhamakedaar update ke saath! 💃\n"
-                "Music ab non-stop chalega kyunki maine **Autoplay Mode** seekh liya hai! 🔥\n\n"
-                "Jab queue khatam hogi, main khud hi mast gaane bajaungi. Boriyat ka the end! 😎\n\n"
-                "**Try karo:** `!autoplay on`\n\n"
-                "Enjoy karo guys! 🎵✨"
-            )
-            
-            count = 0
-            for guild in self.guilds:
-                try:
-                    target = guild.system_channel
-                    if not target:
-                        for channel in guild.text_channels:
-                            if channel.permissions_for(guild.me).send_messages:
-                                target = channel
-                                break
-                    
-                    if target:
-                        await target.send(message)
-                        count += 1
-                        logger.info(f"Broadcast sent to {guild.name}")
-                        # Small delay to avoid rate limits
-                        await asyncio.sleep(1)
-                except Exception as e:
-                    logger.error(f"Broadcast failed for {guild.name}: {e}")
-            
-            logger.info(f"Broadcast completed. Sent to {count} servers.")
-            
-            # Create flag file
-            with open("broadcast_done.flag", "w") as f:
-                f.write("done")
+
+
     
     async def on_guild_join(self, guild):
         """Handle bot joining a new guild"""
