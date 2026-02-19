@@ -69,9 +69,8 @@ Music Bot is a feature-rich Discord music bot built with Python, `discord.py`, a
 | Command | Aliases | Description |
 |---|---|---|
 | `!volume <0.1-2.0>` | | Set playback volume |
-| `!lyrics [song name]` | | Get lyrics for current or specified song |
-| `!find <query>` | `!search` | Search YouTube and select from results |
-| `!helpme` | | Show beautifully formatted help with categories |
+| `!volume <0.1-2.0>` | | Set playback volume |
+| `!help` | | Show beautifully formatted help with categories |
 
 ### 👑 **Admin-Only Commands**
 | Command | Description |
@@ -178,6 +177,9 @@ Please refer to the official documentation for `FFmpeg` and `yt-dlp` installatio
     # Optional for Spotify support
     SPOTIPY_CLIENT_ID=your_spotify_client_id
     SPOTIPY_CLIENT_SECRET=your_spotify_client_secret
+
+    # Required for Dashboard Remote Control
+    ADMIN_PIN=your_secret_pin_here  # Min 6 chars
     ```
 
 6.  **Run the Bot:**
@@ -297,6 +299,12 @@ docker-compose config
 
 # Rebuild if needed
 docker-compose build --no-cache
+```
+
+**Dashboard controls disabled**:
+```sh
+# Set ADMIN_PIN in .env
+ADMIN_PIN=your_secure_pin
 ```
 
 **Dashboard not accessible**:
