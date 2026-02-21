@@ -592,7 +592,7 @@ class MusicCog(commands.Cog):
         await ctx.send(f"{emoji} Repeat **{status}** kar diya! {msg}")
         log_audio_event(ctx.guild.id, f"repeat_{status.lower()}")
     
-    @commands.command()
+    @commands.command(aliases=['vol'])
     async def volume(self, ctx, vol: float):
         """Set the playback volume (0.1 - 2.0)"""
         log_command_usage(ctx, "volume", str(vol))
@@ -610,7 +610,7 @@ class MusicCog(commands.Cog):
         await ctx.send(f"🔊 Volume set to **{vol}**! (Sirf abhi ke liye) 🎚️")
         log_audio_event(ctx.guild.id, "volume_changed", str(vol))
     
-    @commands.command(aliases=['cleanup', 'clean', 'clear'])
+    @commands.command(aliases=['cleanup', 'clean', 'clear', 'cl'])
     async def cleanqueue(self, ctx):
         """Remove invalid/broken songs from the queue"""
         log_command_usage(ctx, "cleanqueue")

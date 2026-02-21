@@ -1,0 +1,28 @@
+services:
+  standalone_web_app:
+    build:
+      context: .
+      dockerfile: music_web_app/Dockerfile
+    container_name: music-web-app-standalone
+    restart: unless-stopped
+    ports:
+      - "5005:5005"
+    environment:
+      - PORT=5005
+      - TZ=Asia/Kolkata # Sets the container to your local timezone
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+
+  localtunnel:
+    image: node:18-alpine
+    container_name: music-web-ssl-tunnel
+    restart: unless-stopped
+    command: >
+      /bin/sh -c "
+      apk add --no-cache curl && 
+      (sleep 5 && curl -H 'Bypass-Tunnel-Reminder: true' https://amitk-music.loca.lt > /dev/null 2>&1) & 
+      npx -y localtunnel --port 5005 --local-host standalone_web_app --host https://loca.lt --subdomain amitk-music
+      "
+    depends_on:
+      - standalone_web_app
