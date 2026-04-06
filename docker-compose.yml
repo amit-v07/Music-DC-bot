@@ -115,7 +115,7 @@ services:
     volumes:
       # Read-only access to the same shared data volume
       - bot-data:/data:ro
-      - bot-logs:/app/logs:ro
+      - bot-logs:/app/logs
       - ./static:/app/static:ro
       - ./templates:/app/templates:ro
 
