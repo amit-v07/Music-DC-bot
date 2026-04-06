@@ -227,6 +227,10 @@ def run_dashboard():
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"Starting dashboard on port {port}")
 
+    # Initialize the database connection for the dashboard process
+    from utils import db
+    _run_async(db.init_db())
+
     # Start background stats push as a gevent greenlet (not a thread)
     socketio.start_background_task(background_stats_push)
 
