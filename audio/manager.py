@@ -236,10 +236,15 @@ class AudioManager:
         queue = self.get_queue(guild_id)
         current_idx = self.guild_current_index.get(guild_id, 0)
         
+        self._cancel_prefetch(guild_id)
+        
         if current_idx < len(queue) - 1:
-            self._cancel_prefetch(guild_id)
             self.guild_current_index[guild_id] = current_idx + 1
             return True
+        elif current_idx == len(queue) - 1:
+            # Advance past the end to a waiting state
+            self.guild_current_index[guild_id] = current_idx + 1
+            return False
         return False
     
     def previous_song(self, guild_id: int) -> bool:
