@@ -83,11 +83,7 @@ class BotConfig:
             self.ydl_options = {
                 # Prefer streams that are already Opus-encoded so FFmpeg just
                 # copies the audio without re-encoding (huge CPU saving).
-                'format': (
-                    'bestaudio[ext=webm][acodec=opus]'
-                    '/bestaudio[ext=ogg]'
-                    '/bestaudio'
-                ),
+                'format': 'bestaudio/best',
                 'quiet': True,
                 'extract_flat': False,
                 'noplaylist': True,

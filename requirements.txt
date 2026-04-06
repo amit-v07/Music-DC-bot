@@ -8,7 +8,7 @@ discord.py[voice]>=2.3.0      # Bot framework + FFmpeg voice support
 PyNaCl>=1.5.0                  # Opus/NaCl voice encryption (discord.py requirement)
 
 # ── Audio & Streaming ─────────────────────────────────────────────────────────
-yt-dlp>=2024.1.0               # YouTube / audio extraction (kept current)
+yt-dlp>=2025.1.0               # YouTube / audio extraction (kept current)
 ytmusicapi>=1.3.0              # YouTube Music metadata
 
 # ── Async Networking ──────────────────────────────────────────────────────────
