@@ -1,6 +1,12 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Music Bot — Production docker-compose
+# Host: MacBook Air 2018 (Intel i5-8210Y, 2 cores / 4 threads, 8 GB RAM)
+# Ubuntu Server + Docker — single-machine deployment, no swarm/Kubernetes.
+# ──────────────────────────────────────────────────────────────────────────────
 
 services:
-  # Discord Music Bot
+
+  # ── Discord Bot ─────────────────────────────────────────────────────────
   bot:
     build:
       context: .
@@ -8,50 +14,77 @@ services:
     image: music-bot:latest
     container_name: discord-music-bot
     restart: unless-stopped
+
     environment:
-      # Discord Configuration
+      # Discord
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - DEFAULT_PREFIX=${DEFAULT_PREFIX:-!}
-      
-      # Spotify Configuration (Optional)
-      - SPOTIPY_CLIENT_ID=${SPOTIPY_CLIENT_ID}
-      - SPOTIPY_CLIENT_SECRET=${SPOTIPY_CLIENT_SECRET}
+      # Spotify (optional)
+      - SPOTIPY_CLIENT_ID=${SPOTIPY_CLIENT_ID:-}
+      - SPOTIPY_CLIENT_SECRET=${SPOTIPY_CLIENT_SECRET:-}
       - SPOTIPY_REDIRECT_URI=${SPOTIPY_REDIRECT_URI:-http://localhost:8888/callback}
-      
-      # Bot Configuration
+      # Bot tuning
       - DEFAULT_VOLUME=${DEFAULT_VOLUME:-0.5}
       - IDLE_TIMEOUT=${IDLE_TIMEOUT:-300}
       - ALONE_TIMEOUT=${ALONE_TIMEOUT:-60}
+      # SQLite path (inside the bot-data volume)
+      - DB_PATH=/data/music_bot.db
+      # Gemini AI (optional)
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+
     volumes:
-      # Persistent data volumes
+      # Persistent data: SQLite DB, action queue, logs, audio cache
+      - bot-data:/data
       - bot-logs:/app/logs
-      - bot-stats:/app/stats
       - bot-cache:/app/audio_cache
-      # Uncomment for development hot-reload
+      # Code bind-mounts for hot-reload during development.
+      # Comment these out for a pure image-based deployment.
       - ./bot.py:/app/bot.py:ro
       - ./commands:/app/commands:ro
       - ./audio:/app/audio:ro
       - ./config.py:/app/config.py:ro
       - ./utils:/app/utils:ro
-      - ./tests:/app/tests
-      - ./.env:/app/.env
+      - ./.env:/app/.env:ro
+
     networks:
       - music-bot-network
+
+    # ── Resource limits ─────────────────────────────────────────────────
+    # The host has 2 cores.  Give the bot 1.5 cores + 400 MB RAM.
+    # The dashboard gets the remaining 0.5 cores + 256 MB RAM.
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 512M
+          cpus: '1.5'
+          memory: 400M
         reservations:
+          cpus: '0.5'
           memory: 256M
+
+    # ── Logging ─────────────────────────────────────────────────────────
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # ── Health check ─────────────────────────────────────────────────────
     healthcheck:
-      test: ["CMD", "python", "-c", "import os, signal; pid = os.getpid(); signal.signal(signal.SIGTERM, signal.SIG_DFL)"]
+      test: ["CMD-SHELL", "pgrep -f 'python bot.py' > /dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
 
-  # Web Dashboard
+    # ── Sysctl tuning (Change 15) ─────────────────────────────────────────
+    # Larger UDP buffers prevent packet loss during high-quality voice streaming.
+    # Requires Docker >= 20.10 and kernel-level permission on the host.
+    sysctls:
+      net.core.rmem_max: 2500000
+      net.core.wmem_max: 2500000
+
+
+  # ── Web Dashboard ────────────────────────────────────────────────────────
   dashboard:
     build:
       context: .
@@ -59,50 +92,111 @@ services:
     image: music-bot:latest
     container_name: music-bot-dashboard
     restart: unless-stopped
-    # Run dashboard with production WSGI server (gunicorn with gevent-websocket support)
-    command: gunicorn --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker --workers 1 --bind 0.0.0.0:5000 dashboard:app
+
+    # Run dashboard.py directly — NOT gunicorn.
+    # Gunicorn + gevent-websocket has race conditions with aiosqlite and the
+    # gevent monkey-patch order.  Direct invocation is simpler and equally stable.
+    command: python dashboard.py
+
     environment:
-      # Use same environment variables as bot
       - DISCORD_TOKEN=${DISCORD_TOKEN}
-      - SPOTIPY_CLIENT_ID=${SPOTIPY_CLIENT_ID}
-      - SPOTIPY_CLIENT_SECRET=${SPOTIPY_CLIENT_SECRET}
-      # Dashboard security
+      - SPOTIPY_CLIENT_ID=${SPOTIPY_CLIENT_ID:-}
+      - SPOTIPY_CLIENT_SECRET=${SPOTIPY_CLIENT_SECRET:-}
+      # Dashboard security — generate with:
+      #   python -c "import secrets; print(secrets.token_hex(32))"
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      - ADMIN_PIN=${ADMIN_PIN:-}
+      - PORT=5000
+      # Shared DB path so dashboard can read guild stats
+      - DB_PATH=/data/music_bot.db
+
     ports:
       - "5000:5000"
+
     volumes:
-      # Shared volumes with bot for stats access
-      - bot-logs:/app/logs
-      - bot-stats:/app/stats
+      # Read-only access to the same shared data volume
+      - bot-data:/data:ro
+      - bot-logs:/app/logs:ro
       - ./static:/app/static:ro
       - ./templates:/app/templates:ro
+
     networks:
       - music-bot-network
+
     depends_on:
       bot:
         condition: service_healthy
+
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 256M
         reservations:
+          cpus: '0.1'
           memory: 128M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5000/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:5000/api/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 30s
 
-networks:
-  music-bot-network:
-    driver: bridge
 
+  # ── Auto-updater (Watchtower) ────────────────────────────────────────────
+  # Polls for new local images every 6 hours and restarts changed containers.
+  # Only watches containers labelled with the music-bot scope.
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: music-bot-watchtower
+    restart: unless-stopped
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    environment:
+      # Check for updates every 6 hours (21600 seconds)
+      - WATCHTOWER_POLL_INTERVAL=21600
+      # Only watch containers in this compose project scope
+      - WATCHTOWER_SCOPE=music-bot
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_INCLUDE_STOPPED=false
+      - TZ=Asia/Kolkata
+
+    labels:
+      - "com.centurylinklabs.watchtower.scope=music-bot"
+
+    networks:
+      - music-bot-network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 64M
+
+
+# ── Named volumes ────────────────────────────────────────────────────────────
 volumes:
-  bot-logs:
+  bot-data:
     driver: local
-  bot-stats:
+    # Backed by a directory on the host for easy backup:
+    #   docker run --rm -v bot-data:/data -v $(pwd):/backup alpine \
+    #     tar czf /backup/bot-data-$(date +%Y%m%d).tar.gz /data
+  bot-logs:
     driver: local
   bot-cache:
     driver: local
+
+
+# ── Networks ─────────────────────────────────────────────────────────────────
+networks:
+  music-bot-network:
+    driver: bridge

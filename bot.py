@@ -10,18 +10,53 @@ from utils.logger import logger
 from audio.manager import audio_manager
 from utils.stats_manager import stats_manager
 
+# ---------------------------------------------------------------------------
+# Per-guild prefix cache  (Change 8)
+# Guild ID -> prefix string.  Populated at startup and on !setprefix.
+# ---------------------------------------------------------------------------
+_prefix_cache: dict[int, str] = {}
+
+
+async def get_prefix(bot, message):
+    """
+    Dynamic prefix resolver used as command_prefix= callable.
+    Priority: in-memory cache → SQLite → config.default_prefix.
+    Always also accepts a @mention so `@Bot help` works on every server.
+    """
+    # DMs always use the default prefix
+    if not message.guild:
+        prefix = config.default_prefix
+    else:
+        guild_id = message.guild.id
+        if guild_id in _prefix_cache:
+            prefix = _prefix_cache[guild_id]
+        else:
+            # Cold-cache miss — read from DB
+            try:
+                from utils import db
+                prefix = await db.get_prefix(guild_id)
+            except Exception as e:
+                logger.warning(f"get_prefix DB error for guild {guild_id}: {e}")
+                prefix = config.default_prefix
+            _prefix_cache[guild_id] = prefix
+
+    return [
+        prefix,
+        f'<@{bot.user.id}> ',
+        f'<@!{bot.user.id}> ',
+    ]
+
 
 class MusicBot(commands.Bot):
     """Enhanced Discord bot with improved architecture"""
     
     def __init__(self):
-        # Use fixed prefix since we no longer have database settings
         intents = discord.Intents.default()
         intents.message_content = True
         intents.voice_states = True  # For voice state monitoring
         
         super().__init__(
-            command_prefix=config.default_prefix,
+            command_prefix=get_prefix,  # Dynamic per-guild prefix (Change 8)
             intents=intents,
             help_command=None  # We'll create our own help command
         )
@@ -35,6 +70,18 @@ class MusicBot(commands.Bot):
         logger.info("Starting bot setup...")
         
         try:
+            # Initialise SQLite DB and run JSON migration (Change 5)
+            await stats_manager.init()
+            
+            # Preload all guild prefixes into the in-memory cache (Change 8)
+            try:
+                from utils import db
+                stored_prefixes = await db.get_all_prefixes()
+                _prefix_cache.update(stored_prefixes)
+                logger.info(f"Preloaded {len(stored_prefixes)} guild prefix(es) into cache")
+            except Exception as e:
+                logger.warning(f"Could not preload prefixes: {e}")
+            
             # Load all command cogs
             await self.load_extension('commands.music')
             await self.load_extension('commands.admin')
@@ -275,6 +322,9 @@ class MusicBot(commands.Bot):
         """Handle bot leaving a guild"""
         logger.info(f"Left guild: {guild.name} ({guild.id})")
         
+        # Evict from prefix cache (Change 8)
+        _prefix_cache.pop(guild.id, None)
+        
         # Clean up guild data
         try:
             audio_manager.clear_queue(guild.id)
@@ -327,7 +377,7 @@ class MusicBot(commands.Bot):
         
         # Handle cooldown errors
         if isinstance(error, commands.CommandOnCooldown):
-            await ctx.send(f"⏱️ Command is on cooldown. Try again in {error.retry_after:.1f} seconds.")
+            await ctx.send(f"⏱️ Slow down! Try again in {error.retry_after:.1f}s")
             return
         
         # Handle missing permissions
@@ -375,6 +425,13 @@ class MusicBot(commands.Bot):
 @commands.command(name='help')
 async def help_command(ctx):
     """Enhanced help command with beautiful formatting"""
+    # Determine the current guild's actual prefix
+    if ctx.guild:
+        from bot import _prefix_cache
+        prefix = _prefix_cache.get(ctx.guild.id, config.default_prefix)
+    else:
+        prefix = config.default_prefix
+    
     embed = discord.Embed(
         title="🎵 Music Bot Commands",
         description="Complete guide to all available commands",
@@ -386,11 +443,11 @@ async def help_command(ctx):
         name="🎮 **Basic Controls**",
         value=(
             "`join` — Join your voice channel\n"
-            "`play <song/URL>` (alias: `p`) — Play music\n"
+            f"`play <song/URL>` (alias: `p`) — Play music\n"
             "`pause` — Pause current song\n"
-            "`resume` (alias: `start`) — Resume playback\n"
+            f"`resume` (alias: `start`) — Resume playback\n"
             "`stop` — Stop, clear queue & disable autoplay\n"
-            "`leave` (aliases: `bye`, `exit`, `quit`, `dc`, `disconnect`, `out`) — Leave voice channel"
+            f"`leave` (aliases: `bye`, `exit`, `quit`, `dc`, `disconnect`, `out`) — Leave voice channel"
         ),
         inline=False
     )
@@ -426,7 +483,20 @@ async def help_command(ctx):
         name="🔧 **Audio & Other**",
         value=(
             "`volume <0.1-2.0>` — Set playback volume\n"
-            "`nowplaying` — Show current song with controls"
+            "`nowplaying` — Show current song with controls\n"
+            "`stats` — Show server listening statistics"
+        ),
+        inline=False
+    )
+    
+    # Admin Commands
+    embed.add_field(
+        name="👑 **Admin Commands**",
+        value=(
+            f"`setprefix <prefix>` — Change the bot prefix for this server\n"
+            f"`quality <low|medium|high>` — Toggle audio quality bitrate\n"
+            "`clearqueue` — Clear the entire queue\n"
+            "`resetstats` — Reset server listening statistics"
         ),
         inline=False
     )
@@ -434,7 +504,7 @@ async def help_command(ctx):
     embed.add_field(
         name="💡 **Tips**",
         value=(
-            f"• Use `{config.default_prefix}` as the command prefix\n"
+            f"• Your prefix for this server: `{prefix}`\n"
             "• Click the buttons on the player for quick controls\n"
             "• Supports YouTube links, playlists, and Spotify URLs\n"
             "• Auto-leave if alone for 1 minute\n"
@@ -472,6 +542,15 @@ async def main():
 
 if __name__ == "__main__":
     try:
+        # Activate uvloop for better event loop performance on Linux/macOS
+        # Falls back gracefully on Windows (development machines)
+        try:
+            import uvloop
+            asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+            logger.info("uvloop event loop policy activated")
+        except ImportError:
+            logger.info("uvloop not available, using default asyncio event loop")
+        
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")

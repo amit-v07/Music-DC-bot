@@ -1,70 +1,66 @@
-# Multi-stage Dockerfile for Discord Music Bot
-# Optimized for production deployment with minimal image size
+# ──────────────────────────────────────────────────────────────────────────────
+# Discord Music Bot — Production Dockerfile
+# Single-stage build on python:3.11-slim-bookworm.
+# Keeps image lean while installing all native deps needed for voice audio.
+# ──────────────────────────────────────────────────────────────────────────────
 
-# ==================== Builder Stage ====================
-FROM python:3.11-slim AS builder
+FROM python:3.11-slim-bookworm
 
-# Set working directory
-WORKDIR /build
+# ── Build-time labels ──────────────────────────────────────────────────────
+LABEL maintainer="Music Bot"
+LABEL description="Discord music bot with yt-dlp, FFmpeg, and Flask dashboard"
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    libffi-dev \
-    libsodium-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements first for better layer caching
-COPY requirements.txt .
-
-# Install Python dependencies and create wheels
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
-
-# ==================== Runtime Stage ====================
-FROM python:3.11-slim
-
-# Set environment variables
+# ── Environment ────────────────────────────────────────────────────────────
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    # Tells aiosqlite / stats_manager where to write the DB (override via compose)
+    DB_PATH=/data/music_bot.db
 
-# Install runtime dependencies
+# ── System dependencies ────────────────────────────────────────────────────
+# ffmpeg     — audio transcoding for Discord voice
+# libopus0   — Opus codec shared library (discord.py voice requirement)
+# libsodium23 — NaCl/PyNaCl cryptography for voice encryption
+# curl       — used by the docker-compose healthcheck
+# procps     — ps/pgrep used by the Dockerfile HEALTHCHECK
+# ca-certificates — needed for HTTPS calls to YouTube / Spotify APIs
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    libsodium23 \
-    ca-certificates \
+        ffmpeg \
+        libopus0 \
+        libsodium23 \
+        curl \
+        procps \
+        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install yt-dlp
-RUN pip install --no-cache-dir yt-dlp
+# ── Non-root user ──────────────────────────────────────────────────────────
+RUN useradd -m -u 1000 -s /bin/bash botuser \
+    && mkdir -p /app /data \
+    && chown -R botuser:botuser /app /data
 
-# Create non-root user
-RUN useradd -m -u 1000 -s /bin/bash botuser && \
-    mkdir -p /app/logs /app/stats /app/audio_cache /app/temp && \
-    chown -R botuser:botuser /app
-
-# Set working directory
 WORKDIR /app
 
-# Copy wheels from builder and install
-COPY --from=builder /wheels /wheels
-RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
+# ── Python dependencies ────────────────────────────────────────────────────
+# Copy requirements first so Docker can cache the pip layer independently
+# from the application code.
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# ── Application code ───────────────────────────────────────────────────────
 COPY --chown=botuser:botuser . .
 
-# Switch to non-root user
+# ── Switch to non-root ─────────────────────────────────────────────────────
 USER botuser
 
-# Expose dashboard port
+# ── Expose dashboard port ──────────────────────────────────────────────────
 EXPOSE 5000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import sys; sys.exit(0)"
+# ── Health check ────────────────────────────────────────────────────────────
+# Verifies bot.py process is running; retries 3× before marking unhealthy.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD pgrep -f "python bot.py" > /dev/null || exit 1
 
-# Default command (can be overridden in docker-compose)
+# ── Default command ────────────────────────────────────────────────────────
 CMD ["python", "bot.py"]

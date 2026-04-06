@@ -59,6 +59,7 @@ class MusicCog(commands.Cog):
         log_audio_event(ctx.guild.id, "joined_voice_channel")
     
     @commands.command(aliases=['p'])
+    @commands.cooldown(rate=3, per=10, type=commands.BucketType.user)
     async def play(self, ctx, *, query: str):
         """Play a song or add to queue"""
         log_command_usage(ctx, "play", query)
@@ -185,7 +186,49 @@ class MusicCog(commands.Cog):
             else:
                 ydl_opts['noplaylist'] = True
         else:
-            # It's a search query - single video only
+            # —————————————————————————————————————————————
+            # Smart auto-select: fetch top 5 results, score, pick the best.
+            # —————————————————————————————————————————————
+            smart_opts = ydl_opts.copy()
+            smart_opts['default_search'] = 'ytsearch5'
+            smart_opts['noplaylist'] = True
+            smart_opts['extract_flat'] = False  # need full info to score
+            
+            try:
+                from utils.connection_pool import ytdlp_pool
+                info = await ytdlp_pool.execute(smart_opts, query, download=False)
+            except ImportError:
+                import yt_dlp as _ytd
+                loop = asyncio.get_event_loop()
+                def _fetch5():
+                    with _ytd.YoutubeDL(smart_opts) as ydl:
+                        return ydl.extract_info(query, download=False)
+                from audio.manager import _ydl_executor
+                info = await loop.run_in_executor(_ydl_executor, _fetch5)
+            
+            entries = []
+            if info:
+                entries = info.get('entries') or ([info] if info.get('url') else [])
+                entries = [e for e in entries if e and e.get('url')]
+            
+            if entries:
+                # Score each result and pick the best
+                scored = [(self._score_result(query, e), e) for e in entries]
+                scored.sort(key=lambda x: x[0], reverse=True)
+                best = scored[0][1]
+                song = Song(
+                    title=best.get('title', 'Unknown'),
+                    url=best.get('url'),
+                    webpage_url=best.get('webpage_url') or best.get('url'),
+                    duration=best.get('duration'),
+                    thumbnail=best.get('thumbnail'),
+                    requester_id=user_id,
+                    is_lazy=False,  # already resolved
+                    search_auto_selected=True,
+                )
+                return [song]
+            
+            # Fallback to ytsearch1 if smart search returns nothing
             ydl_opts['default_search'] = 'ytsearch1'
             ydl_opts['noplaylist'] = True
         
@@ -247,6 +290,47 @@ class MusicCog(commands.Cog):
             raise e
         
         return songs
+    
+    @staticmethod
+    def _score_result(query: str, result: dict) -> float:
+        """
+        Score a yt-dlp search result against the user's query.
+        Higher is better.
+
+        Scoring breakdown (max ~200 points):
+        1. Title token overlap         → 0–50
+        2. View count (log scale)      → 0∼50
+        3. Duration penalty (>600 s)   → negative
+        4. Official source boost       → +15
+        """
+        import math
+
+        score: float = 0.0
+
+        # 1. Token overlap between query words and result title
+        query_tokens = set(query.lower().split())
+        title = (result.get('title') or '').lower()
+        title_tokens = set(title.split())
+        if query_tokens and title_tokens:
+            overlap = len(query_tokens & title_tokens) / len(query_tokens)
+            score += overlap * 50
+
+        # 2. View count signal
+        view_count = result.get('view_count') or 0
+        score += math.log10(view_count + 1) * 5
+
+        # 3. Duration penalty for very long videos (>10 min)
+        duration = result.get('duration') or 0
+        if duration > 600:
+            score -= (duration - 600) / 60 * 2
+
+        # 4. Official source boost
+        channel = (result.get('channel') or result.get('uploader') or '').lower()
+        official_keywords = ('official', 'vevo', 'records', 'music')
+        if any(kw in channel for kw in official_keywords):
+            score += 15
+
+        return score
     
     async def _process_playlist_batch(self, ctx, query: str, processing_msg):
         """Process playlists in batches with progress updates"""
@@ -371,6 +455,7 @@ class MusicCog(commands.Cog):
             await ctx.send("❌ Gaana toh chal hi raha hai! Kya restart karu? 🤔")
     
     @commands.command(aliases=['next'])
+    @commands.cooldown(rate=5, per=10, type=commands.BucketType.user)
     async def skip(self, ctx):
         """Skip to the next song"""
         log_command_usage(ctx, "skip")
@@ -799,12 +884,19 @@ async def play_current_song(ctx):
             return
         
         try:
-            # Create audio source
-            source = await audio_manager.create_audio_source(current_song, guild_id)
+            # Create audio source (acquires stream semaphore internally)
+            source = await audio_manager.create_audio_source(
+                current_song,
+                guild_id,
+                notify_channel=ctx.channel,
+            )
             
             def after_playing(error):
                 if error:
                     logger.error("audio_playback", Exception(str(error)), guild_id=guild_id)
+                
+                # Release the stream semaphore slot so another guild can play
+                audio_manager.release_stream_slot()
                 
                 # Schedule next song (fire-and-forget, do NOT block with fut.result())
                 if ctx.voice_client and ctx.voice_client.is_connected():
@@ -812,6 +904,9 @@ async def play_current_song(ctx):
             
             # Start playback
             ctx.voice_client.play(source, after=after_playing)
+            
+            # Pre-resolve the next song in background to eliminate gap at transition
+            audio_manager.schedule_prefetch(guild_id)
             
             # Get requester name
             requester_name = "Unknown"

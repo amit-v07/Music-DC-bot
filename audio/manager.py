@@ -5,6 +5,7 @@ Handles audio sources, playback, and queue management
 import asyncio
 import discord
 import yt_dlp
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -12,6 +13,14 @@ from config import config
 from utils.logger import logger, log_audio_event
 from spotipy import Spotify
 from spotipy.oauth2 import SpotifyClientCredentials
+
+# Dedicated thread pool for yt-dlp — keeps it off the shared default pool
+# so other asyncio executor work isn't blocked by long audio extractions.
+_ydl_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="ydl")
+
+# Global semaphore: max 4 simultaneous FFmpeg streams across all guilds.
+# Acquired at playback start, released in the after_playing callback.
+_stream_semaphore = asyncio.Semaphore(4)
 
 
 @dataclass
@@ -26,6 +35,8 @@ class Song:
     requester_id: int = 0
     requester_name: str = "Unknown"
     is_lazy: bool = False
+    resolved_url: Optional[str] = None  # Pre-resolved stream URL (Change 3)
+    search_auto_selected: bool = False  # Set True when smart search auto-picks this song
     added_at: datetime = field(default_factory=datetime.now)
     
     def format_duration(self) -> str:
@@ -59,6 +70,9 @@ class AudioManager:
         
         # Request deduplication
         self._pending_resolutions = set()
+        
+        # Pre-fetch tasks: one per guild — resolves the next track in background
+        self._prefetch_tasks: Dict[int, asyncio.Task] = {}
         
         # Initialize Spotify client if credentials are available
         self.spotify_client = None
@@ -185,6 +199,7 @@ class AudioManager:
     
     def clear_queue(self, guild_id: int):
         """Clear the entire queue"""
+        self._cancel_prefetch(guild_id)
         self.guild_queues[guild_id] = []
         self.guild_current_index[guild_id] = 0
     
@@ -211,6 +226,7 @@ class AudioManager:
         queue = self.get_queue(guild_id)
         
         if 0 <= index < len(queue):
+            self._cancel_prefetch(guild_id)
             self.guild_current_index[guild_id] = index
             return True
         return False
@@ -221,6 +237,7 @@ class AudioManager:
         current_idx = self.guild_current_index.get(guild_id, 0)
         
         if current_idx < len(queue) - 1:
+            self._cancel_prefetch(guild_id)
             self.guild_current_index[guild_id] = current_idx + 1
             return True
         return False
@@ -317,13 +334,13 @@ class AudioManager:
                         from utils.connection_pool import ytdlp_pool
                         info = await ytdlp_pool.execute(ydl_opts, search_query, download=False)
                     except ImportError:
-                        # Fallback to direct execution if pool not available
+                        # Fallback to direct execution with dedicated executor
                         def _extract_info():
                             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                                 return ydl.extract_info(search_query, download=False)
                         
                         loop = asyncio.get_event_loop()
-                        info = await loop.run_in_executor(None, _extract_info)
+                        info = await loop.run_in_executor(_ydl_executor, _extract_info)
                     
                     # Process info
                     if info:
@@ -483,16 +500,69 @@ class AudioManager:
         """Check if string is a Spotify URL"""
         return 'open.spotify.com' in url
     
-    async def create_audio_source(self, song: Song, guild_id: int) -> discord.AudioSource:
-        """Create discord audio source from song"""
-        if song.is_lazy:
+    async def create_audio_source(
+        self,
+        song: Song,
+        guild_id: int,
+        notify_channel=None,
+    ) -> discord.AudioSource:
+        """
+        Create a discord AudioSource for the given song.
+
+        Acquires the global _stream_semaphore (max 4 concurrent FFmpeg streams).
+        If we are at capacity, an embed is sent to notify_channel and we then
+        await the semaphore — playback starts as soon as a slot opens.
+
+        Tries song.resolved_url first (pre-fetched in background) so we can
+        skip the yt-dlp call entirely for the common case.
+        """
+        # ── Resolve lazy song ──────────────────────────────────────────────
+        if song.resolved_url:
+            # Fast path: URL was pre-resolved in background after previous song started
+            song.url = song.resolved_url
+            song.is_lazy = False
+            song.resolved_url = None  # consume it
+            log_audio_event(guild_id, "song_resolved_prefetch", song.title)
+        elif song.is_lazy:
             song = await self.resolve_lazy_song(song)
         
         if not song.url:
             raise ValueError(f"No playable URL found for {song.title}")
         
-        # Create FFmpeg source with optimized options
+        # ── Concurrency guard ─────────────────────────────────────────────
+        if _stream_semaphore._value == 0 and notify_channel:
+            try:
+                embed = discord.Embed(
+                    title="⏳ Bot is at capacity",
+                    description=(
+                        "4 servers are already streaming. "
+                        "You're queued — music starts when a slot opens."
+                    ),
+                    color=0xF39C12,
+                )
+                await notify_channel.send(embed=embed)
+            except Exception:
+                pass
+        
+        await _stream_semaphore.acquire()
+        
+        # ── Audio quality ─────────────────────────────────────────────────
+        try:
+            quality = await self._get_guild_quality(guild_id)
+        except Exception:
+            quality = config.default_audio_quality
+        
+        preset = config.AUDIO_QUALITY_PRESETS.get(quality, config.AUDIO_QUALITY_PRESETS['medium'])
+        bitrate = preset['bitrate']
+        
+        # ── Build ffmpeg options ───────────────────────────────────────────
         options = config.ffmpeg_options.copy()
+        # Inject bitrate into options string
+        base_opts = options.get('options', '-vn')
+        if '-b:a' not in base_opts:
+            options['options'] = f"{base_opts} -b:a {bitrate}"
+        
+        # ── Create source ─────────────────────────────────────────────────
         source = discord.FFmpegPCMAudio(song.url, **options)
         
         # Apply volume
@@ -500,6 +570,68 @@ class AudioManager:
         source = discord.PCMVolumeTransformer(source, volume=volume)
         
         return source
+    
+    def release_stream_slot(self):
+        """Release a stream slot back to the semaphore. Call from after_playing callback."""
+        try:
+            _stream_semaphore.release()
+        except Exception:
+            pass
+    
+    # ── Prefetch helpers ───────────────────────────────────────────────────
+    
+    def _cancel_prefetch(self, guild_id: int):
+        """Cancel any in-flight prefetch task for this guild."""
+        task = self._prefetch_tasks.pop(guild_id, None)
+        if task and not task.done():
+            task.cancel()
+    
+    def schedule_prefetch(self, guild_id: int):
+        """
+        Fire-and-forget: pre-resolve the NEXT song in the background so
+        playback of that track can start immediately without waiting for yt-dlp.
+        """
+        self._cancel_prefetch(guild_id)
+        
+        queue = self.get_queue(guild_id)
+        current_idx = self.guild_current_index.get(guild_id, 0)
+        next_idx = current_idx + 1
+        
+        if next_idx >= len(queue):
+            return  # No next song to prefetch
+        
+        next_song = queue[next_idx]
+        if not next_song.is_lazy or next_song.resolved_url:
+            return  # Already resolved or not lazy
+        
+        async def _prefetch():
+            try:
+                resolved = await self.resolve_lazy_song(next_song)
+                # Only store if this song is still at next_idx
+                if (
+                    guild_id in self.guild_queues
+                    and next_idx < len(self.guild_queues[guild_id])
+                    and self.guild_queues[guild_id][next_idx] is next_song
+                ):
+                    next_song.resolved_url = resolved.url
+                    log_audio_event(guild_id, "prefetch_complete", next_song.title)
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error("prefetch_next_song", e, guild_id=guild_id)
+            finally:
+                self._prefetch_tasks.pop(guild_id, None)
+        
+        task = asyncio.create_task(_prefetch())
+        self._prefetch_tasks[guild_id] = task
+    
+    async def _get_guild_quality(self, guild_id: int) -> str:
+        """Read per-guild audio quality from DB, falling back to config default."""
+        try:
+            from utils import db
+            return await db.get_audio_quality(guild_id)
+        except Exception:
+            return config.default_audio_quality
     
     # Auto-disconnect and timer management
     def is_bot_alone_in_vc(self, guild) -> bool:

@@ -10,6 +10,33 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='dashboard_enhanced.css') }}">
+    <style>
+        .voice-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+
+        .voice-active {
+            background-color: rgba(46, 204, 113, 0.15);
+            color: #2ecc71;
+            border: 1px solid rgba(46, 204, 113, 0.3);
+        }
+
+        .voice-inactive {
+            background-color: rgba(149, 165, 166, 0.1);
+            color: #95a5a6;
+            border: 1px solid rgba(149, 165, 166, 0.2);
+        }
+
+        .voice-status i {
+            font-size: 0.9em;
+        }
+    </style>
 </head>
 
 <body class="dark-theme">
@@ -159,6 +186,7 @@
                                     <th>ID</th>
                                     <th>Total Plays</th>
                                     <th>Command Usage</th>
+                                    <th>Voice Chat</th>
                                     <th>Last Active</th>
                                     <th>Actions</th>
                                 </tr>
@@ -391,12 +419,17 @@
             );
 
             filteredServers.forEach(server => {
+                const voiceStatusHTML = server.in_voice
+                    ? `<span class="voice-status voice-active"><i class="fas fa-volume-up"></i> ${server.voice_channel}</span>`
+                    : `<span class="voice-status voice-inactive"><i class="fas fa-volume-mute"></i> Not Connected</span>`;
+
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>${server.guild_name}</td>
                     <td><small>${server.guild_id}</small></td>
                     <td>${server.total_plays}</td>
                     <td>${server.command_count || 0}</td>
+                    <td>${voiceStatusHTML}</td>
                     <td>${new Date(server.last_updated).toLocaleDateString()}</td>
                     <td>
                         <button class="btn-xs" onclick="selectServerForControl('${server.guild_id}')">

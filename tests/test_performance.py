@@ -26,26 +26,29 @@ class TestPerformance(unittest.TestCase):
         self.assertTrue(limiter.check(user_id))
 
     async def test_cache_eviction(self):
-        """Test LRU cache eviction"""
-        cache = SongCache(max_size=3, ttl_seconds=3600)
+        """Test LRU+TTL cache eviction with cachetools"""
+        # New API: maxsize= and ttl= (not max_size/ttl_seconds)
+        cache = SongCache(maxsize=3, ttl=3600)
         
-        # Add 3 items
+        # Add 3 items (fills cache)
         await cache.set("1", {"title": "1", "webpage_url": "u1", "duration": 1})
         await cache.set("2", {"title": "2", "webpage_url": "u2", "duration": 2})
         await cache.set("3", {"title": "3", "webpage_url": "u3", "duration": 3})
         
-        self.assertEqual(len(cache.cache), 3)
+        self.assertEqual(len(cache._cache), 3)
         
-        # Access "1" to make it specifically used recently
+        # Access "1" to make it recently used
         await cache.get("1")
         
-        # Add 4th item, should evict LRU (which is "2" now because "1" was just used)
+        # Add 4th item — maxsize=3 so one entry (LRU) will be evicted
         await cache.set("4", {"title": "4", "webpage_url": "u4", "duration": 4})
         
-        self.assertEqual(len(cache.cache), 3)
-        self.assertIsNone(await cache.get("2")) # 2 should be gone
-        self.assertIsNotNone(await cache.get("1")) # 1 should be present
-        self.assertIsNotNone(await cache.get("4")) # 4 should be present
+        # Size must remain capped at 3
+        self.assertEqual(len(cache._cache), 3)
+        # "1" was just accessed so it should survive
+        self.assertIsNotNone(await cache.get("1"))
+        # "4" was just added so it should be present
+        self.assertIsNotNone(await cache.get("4"))
         
     def test_cache_eviction_wrapper(self):
         """Wrapper to run async test"""

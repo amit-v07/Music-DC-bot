@@ -30,13 +30,102 @@ class AdminCog(commands.Cog):
         return commands.check(predicate)
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @commands.has_permissions(manage_guild=True)
     async def setprefix(self, ctx, prefix: str):
-        """Set the command prefix for this server (session only)"""
+        """Set a custom command prefix for this server (Admin only)"""
         log_command_usage(ctx, "setprefix", prefix)
         
-        await ctx.send(f"ℹ️ **Note:** This bot now uses a fixed prefix: `{config.default_prefix}`\n"
-                      "Custom prefixes are no longer supported for simplicity.")
+        import re
+        
+        # ── Validation ───────────────────
+        error = None
+        if len(prefix) < 1 or len(prefix) > 5:
+            error = "Prefix must be **1–5 characters** long."
+        elif ' ' in prefix:
+            error = "Prefix cannot contain **spaces**."
+        elif re.fullmatch(r'[A-Za-z0-9]', prefix):
+            error = "Prefix cannot be a lone **letter or number** (it would break normal chat)."
+        
+        if error:
+            embed = discord.Embed(
+                title="❌ Invalid Prefix",
+                description=(
+                    f"{error}\n\n"
+                    "**Rules:**\n"
+                    "• 1–5 characters\n"
+                    "• No spaces\n"
+                    "• Cannot be a single letter or digit\n"
+                    "**Examples:** `!`, `>>`, `?.`, `mu!`"
+                ),
+                color=0xE74C3C,
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # ── Persist to DB ────────────────
+        try:
+            from utils import db
+            from bot import _prefix_cache
+            await db.set_prefix(ctx.guild.id, prefix)
+            _prefix_cache[ctx.guild.id] = prefix
+        except Exception as e:
+            logger.error("setprefix_db_write", e, guild_id=ctx.guild.id)
+            await ctx.send("❌ Failed to save prefix. Please try again.")
+            return
+        
+        embed = discord.Embed(
+            title="✅ Prefix Updated",
+            description=(
+                f"Command prefix is now **`{prefix}`**\n"
+                f"Use `{prefix}help` to see all commands."
+            ),
+            color=0x2ECC71,
+        )
+        await ctx.send(embed=embed)
+    
+    @commands.command()
+    @commands.has_permissions(manage_guild=True)
+    async def quality(self, ctx, tier: str = None):
+        """Set audio quality for this server: low / medium / high (Admin only)"""
+        log_command_usage(ctx, "quality", tier or "")
+        
+        valid = ('low', 'medium', 'high')
+        
+        if tier is None or tier.lower() not in valid:
+            embed = discord.Embed(
+                title="🔇 Audio Quality",
+                description=(
+                    "Choose the audio quality for this server:\n"
+                    "• `low`    — 64 kbps (saves bandwidth)\n"
+                    "• `medium` — 128 kbps (**default**)\n"
+                    "• `high`   — 192 kbps (best quality)\n\n"
+                    f"**Usage:** `{config.default_prefix}quality <low|medium|high>`"
+                ),
+                color=0x3498DB,
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        tier = tier.lower()
+        try:
+            from utils import db
+            await db.set_audio_quality(ctx.guild.id, tier)
+        except Exception as e:
+            logger.error("quality_command", e, guild_id=ctx.guild.id)
+            await ctx.send("❌ Failed to save quality setting. Please try again.")
+            return
+        
+        presets = config.AUDIO_QUALITY_PRESETS
+        bitrate = presets[tier]['bitrate']
+        embed = discord.Embed(
+            title="✅ Audio Quality Updated",
+            description=(
+                f"Quality set to **{tier}** ({bitrate}) for this server.\n"
+                "Changes apply for the **next song** that starts."
+            ),
+            color=0x2ECC71,
+        )
+        await ctx.send(embed=embed)
 
     @commands.command()
     @commands.has_permissions(administrator=True)

@@ -1,15 +1,23 @@
 """
-Simple stats tracking system for song plays per server.
-Uses JSON files for persistence without database complexity.
+Stats manager for Music Bot.
+Public API is unchanged — all reads/writes now go to SQLite via utils.db.
+The JSON files in stats/ are kept intact so they can be inspected, but they
+are no longer the source of truth after the first run.
 """
 
+import asyncio
 import json
 import os
-import asyncio
+import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, asdict
 from utils.logger import logger
+
+
+# ---------------------------------------------------------------------------
+# Data structures (kept for backward compat with callers that import them)
+# ---------------------------------------------------------------------------
 
 @dataclass
 class SongPlay:
@@ -21,6 +29,7 @@ class SongPlay:
     duration: int = None
     requester_name: str = "Unknown"
 
+
 @dataclass
 class ServerStats:
     """Stats for a specific server"""
@@ -28,10 +37,10 @@ class ServerStats:
     guild_name: str = "Unknown Server"
     total_plays: int = 0
     most_played: Dict[str, int] = None
-    recent_plays: int = 0  # Last 24 hours
+    recent_plays: int = 0
     last_updated: str = None
     command_usage: Dict[str, int] = None
-    
+
     def __post_init__(self):
         if self.most_played is None:
             self.most_played = {}
@@ -40,455 +49,215 @@ class ServerStats:
         if self.last_updated is None:
             self.last_updated = datetime.now().isoformat()
 
+
+# ---------------------------------------------------------------------------
+# Action queue (still JSON-file based — dashboard polls this)
+# ---------------------------------------------------------------------------
+
 class StatsManager:
-    """Manages song play statistics using JSON files"""
-    
+    """Manages song play statistics — delegates persistence to SQLite via utils.db."""
+
     def __init__(self, stats_dir: str = "stats"):
         self.stats_dir = stats_dir
-        self.plays_file = os.path.join(stats_dir, "song_plays.json")
-        self.server_stats_file = os.path.join(stats_dir, "server_stats.json")
         self.actions_file = os.path.join(stats_dir, "actions_queue.json")
         self._ensure_stats_dir()
         self._lock = asyncio.Lock()
-        # In-memory caches to minimize disk I/O
-        self._plays_cache: List[dict] = []
-        self._server_stats_cache: Dict[str, dict] = {}
-        self._last_persist_ts: float = 0.0
-        self._persist_interval_sec: float = 30.0  # Increased from 5.0 to reduce I/O
-        self._pending_writes: int = 0
-        # Load existing data into memory
-        self._load_existing()
-        
-    # Constants
-    MAX_PLAY_AGE_DAYS = 30
-    MAX_PLAYS_CACHE = 10000
-    
+        self.bot = None
+
+        # DB initialisation is deferred to first async call / explicit init
+        self._db_ready = False
+
     def _ensure_stats_dir(self):
-        """Create stats directory if it doesn't exist"""
         if not os.path.exists(self.stats_dir):
-            os.makedirs(self.stats_dir)
-    
+            os.makedirs(self.stats_dir, exist_ok=True)
+
     def set_bot(self, bot):
-        """Set bot instance for accessing guild information"""
+        """Set bot instance for accessing guild information."""
         self.bot = bot
         logger.info("Bot instance set in stats_manager")
-    
-    async def record_song_play(self, guild_id: int, title: str, requester_id: int, duration: int = None, guild_name: str = None, requester_name: str = "Unknown"):
-        """Record a song play"""
-        async with self._lock:
-            try:
-                # Create song play record
-                play = SongPlay(
-                    title=title,
-                    requester_id=requester_id,
-                    guild_id=guild_id,
-                    timestamp=datetime.now().isoformat(),
-                    duration=duration,
-                    requester_name=requester_name
-                )
-                
-                # Update in-memory plays cache
-                self._plays_cache.append(asdict(play))
-                self._pending_writes += 1
-                
-                # Update server stats in-memory
-                self._update_server_stats_in_memory(guild_id, title, guild_name)
-                
-                # Persist periodically to reduce disk churn
-                await self._maybe_persist()
-                
-                logger.info(f"Recorded song play: {title} in guild {guild_id} ({guild_name})")
-                
-            except Exception as e:
-                logger.error("record_song_play", e, guild_id=guild_id)
+
+    # ------------------------------------------------------------------
+    # DB bootstrap (called from setup_hook after asyncio loop is running)
+    # ------------------------------------------------------------------
+
+    async def init(self):
+        """Initialise the SQLite database and run JSON migration once."""
+        try:
+            from utils import db
+            await db.init_db()
+            await db.migrate_from_json(self.stats_dir)
+            self._db_ready = True
+            logger.info("StatsManager: SQLite backend ready")
+        except Exception as e:
+            logger.error("stats_manager_init", e)
+            # Non-fatal: bot will continue without persistent stats
+
+    # ------------------------------------------------------------------
+    # Recording
+    # ------------------------------------------------------------------
+
+    async def record_song_play(
+        self,
+        guild_id: int,
+        title: str,
+        requester_id: int,
+        duration: int = None,
+        guild_name: str = None,
+        requester_name: str = "Unknown",
+    ):
+        """Record a song play."""
+        try:
+            from utils import db
+            song_id = title[:200]  # Use title as surrogate ID (keeps compat)
+            await db.record_play(guild_id, song_id, title, time.time())
+            logger.info(f"Recorded song play: {title} in guild {guild_id}")
+        except Exception as e:
+            logger.error("record_song_play", e, guild_id=guild_id)
 
     async def record_command_usage(self, guild_id: int, command: str):
-        """Record usage of a command"""
-        async with self._lock:
-            try:
-                key = str(guild_id)
-                self._ensure_server_stats_entry(guild_id)
-                
-                stats_dict = self._server_stats_cache[key]
-                if 'command_usage' not in stats_dict:
-                    stats_dict['command_usage'] = {}
-                
-                cmd_usage = stats_dict['command_usage']
-                cmd_usage[command] = cmd_usage.get(command, 0) + 1
-                
-                self._pending_writes += 1
-                await self._maybe_persist()
-            except Exception as e:
-                logger.error("record_command_usage", e, guild_id=guild_id)
-    
-    def _ensure_server_stats_entry(self, guild_id: int):
-        """Ensure server stats entry exists in cache"""
-        key = str(guild_id)
-        if key not in self._server_stats_cache:
-            self._server_stats_cache[key] = asdict(ServerStats(guild_id=guild_id))
+        """Record usage of a command."""
+        try:
+            from utils import db
+            await db.record_command(guild_id, command)
+        except Exception as e:
+            logger.error("record_command_usage", e, guild_id=guild_id)
 
-    def _load_existing(self):
-        """Load existing stats into memory (best-effort)."""
-        # Load plays cache
-        if os.path.exists(self.plays_file):
-            try:
-                with open(self.plays_file, 'r', encoding='utf-8') as f:
-                    self._plays_cache = json.load(f) or []
-            except Exception:
-                self._plays_cache = []
-        # Cap size to avoid excessive memory
-        if len(self._plays_cache) > 10000:
-            self._plays_cache = self._plays_cache[-10000:]
-        
-        # Load server stats cache
-        if os.path.exists(self.server_stats_file):
-            try:
-                with open(self.server_stats_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        self._server_stats_cache = data
-            except Exception:
-                self._server_stats_cache = {}
-        
-    async def _maybe_persist(self):
-        """Persist caches to disk if interval or batch threshold reached."""
-        import time
-        now = time.time()
-        if (now - self._last_persist_ts) >= self._persist_interval_sec or self._pending_writes >= 50:
-            # Clean up old plays before saving
-            self._cleanup_old_plays()
-            await self._persist_to_disk()
-            self._last_persist_ts = now
-            self._pending_writes = 0
-            
-    def _cleanup_old_plays(self):
-        """Remove plays older than MAX_PLAY_AGE_DAYS to save memory"""
-        try:
-            cutoff = datetime.now() - timedelta(days=StatsManager.MAX_PLAY_AGE_DAYS)
-            
-            # Filter old plays
-            current_plays = []
-            archived_plays = []
-            
-            for play in self._plays_cache:
-                try:
-                    play_ts = datetime.fromisoformat(play.get('timestamp', ''))
-                    if play_ts > cutoff:
-                        current_plays.append(play)
-                    else:
-                        archived_plays.append(play)
-                except ValueError:
-                    # Invalid timestamp, discard
-                    continue
-            
-            # Update cache
-            self._plays_cache = current_plays
-            
-            # Archive old plays if any
-            if archived_plays:
-                try:
-                    archive_file = os.path.join(self.stats_dir, "song_plays_archive.json")
-                    existing_archive = []
-                    
-                    if os.path.exists(archive_file):
-                        with open(archive_file, 'r', encoding='utf-8') as f:
-                            existing_archive = json.load(f)
-                            
-                    existing_archive.extend(archived_plays)
-                    
-                    with open(archive_file, 'w', encoding='utf-8') as f:
-                        json.dump(existing_archive, f, indent=2, ensure_ascii=False)
-                        
-                    logger.info(f"Archived {len(archived_plays)} old stats entries")
-                except Exception as e:
-                    logger.error("archive_old_plays", e)
-            
-            # Enforce hard limit on active cache
-            if len(self._plays_cache) > StatsManager.MAX_PLAYS_CACHE:
-                # Remove oldest from active cache without archiving (assume already handled or least relevant)
-                removed_count = len(self._plays_cache) - StatsManager.MAX_PLAYS_CACHE
-                self._plays_cache = self._plays_cache[-StatsManager.MAX_PLAYS_CACHE:]
-                logger.info(f"Trimmed {removed_count} plays from active cache to maintain limit")
-                
-        except Exception as e:
-            logger.error("cleanup_old_plays", e)
-    
-    async def _persist_to_disk(self):
-        """Write in-memory caches to disk without blocking the event loop."""
-        try:
-            plays_data = list(self._plays_cache)
-            stats_data = dict(self._server_stats_cache)
-            
-            def _write():
-                with open(self.plays_file, 'w', encoding='utf-8') as f:
-                    json.dump(plays_data, f, indent=2, ensure_ascii=False)
-                with open(self.server_stats_file, 'w', encoding='utf-8') as f:
-                    json.dump(stats_data, f, indent=2, ensure_ascii=False)
-            
-            await asyncio.to_thread(_write)
-        except Exception as e:
-            logger.error("persist_to_disk", e)
-    
-    def _update_server_stats_in_memory(self, guild_id: int, title: str, guild_name: str = None):
-        """Update aggregated server statistics in memory."""
-        key = str(guild_id)
-        if key in self._server_stats_cache:
-            stats_dict = self._server_stats_cache[key]
-            # Handle potential missing fields in old data
-            if 'command_usage' not in stats_dict:
-                stats_dict['command_usage'] = {}
-            stats = ServerStats(**stats_dict)
-        else:
-            stats = ServerStats(guild_id=guild_id)
-        
-        # Update guild name if provided
-        if guild_name and guild_name != "Unknown Server":
-            stats.guild_name = guild_name
-        
-        # Update total plays
-        stats.total_plays += 1
-        
-        # Update most played
-        stats.most_played[title] = stats.most_played.get(title, 0) + 1
-        
-        # Update recent plays (last 24 hours) using plays cache
-        stats.recent_plays = self._count_recent_plays_from_cache(guild_id)
-        
-        # Update timestamp
-        stats.last_updated = datetime.now().isoformat()             
-        
-        # Save back to cache
-        self._server_stats_cache[key] = asdict(stats)
-    
+    # ------------------------------------------------------------------
+    # Querying
+    # ------------------------------------------------------------------
+
     async def get_server_stats(self, guild_id: int) -> ServerStats:
-        """Get stats for a specific server"""
+        """Get stats for a specific server."""
         try:
-            key = str(guild_id)
-            if key in self._server_stats_cache:
-                stats_dict = self._server_stats_cache[key]
-                if 'guild_name' not in stats_dict:
-                    stats_dict['guild_name'] = "Unknown Server"
-                if 'command_usage' not in stats_dict:
-                    stats_dict['command_usage'] = {}
-                return ServerStats(**stats_dict)
-            return ServerStats(guild_id=guild_id)
+            from utils import db
+            raw = await db.get_server_stats(guild_id)
+            last_ts = raw.get("last_updated")
+            last_str = datetime.fromtimestamp(last_ts).isoformat() if last_ts else datetime.now().isoformat()
+            return ServerStats(
+                guild_id=guild_id,
+                total_plays=raw["total_plays"],
+                most_played=raw["most_played"],
+                recent_plays=raw["recent_plays"],
+                last_updated=last_str,
+                command_usage=raw["command_usage"],
+            )
         except Exception as e:
             logger.error("get_server_stats", e, guild_id=guild_id)
             return ServerStats(guild_id=guild_id)
-    
+
     async def reset_server_stats(self, guild_id: int):
-        """Reset all statistics for a specific server"""
-        async with self._lock:
-            try:
-                key = str(guild_id)
-                # Remove from server stats cache
-                self._server_stats_cache.pop(key, None)
-                
-                # Remove plays for this guild from cache
-                self._plays_cache = [
-                    play for play in self._plays_cache
-                    if play.get('guild_id') != guild_id
-                ]
-                
-                # Persist changes
-                await self._persist_to_disk()
-                logger.info(f"Reset stats for guild {guild_id}")
-            except Exception as e:
-                logger.error("reset_server_stats", e, guild_id=guild_id)
-    
-    def _count_recent_plays_from_cache(self, guild_id: int) -> int:
-        """Count plays in the last 24 hours using in-memory cache."""
+        """Reset all statistics for a specific server."""
         try:
-            cutoff = datetime.now() - timedelta(hours=24)
-            recent_count = 0
-            for play in self._plays_cache:
-                if play.get('guild_id') == guild_id:
-                    try:
-                        play_time = datetime.fromisoformat(play.get('timestamp'))
-                        if play_time > cutoff:
-                            recent_count += 1
-                    except Exception:
-                        continue
-            return recent_count
+            from utils import db
+            await db.reset_server_stats(guild_id)
+            logger.info(f"Reset stats for guild {guild_id}")
         except Exception as e:
-            logger.error("count_recent_plays_cache", e, guild_id=guild_id)
-            return 0
-    
+            logger.error("reset_server_stats", e, guild_id=guild_id)
+
+    async def get_server_top_songs(self, guild_id: int, limit: int = 10) -> List[Tuple[str, int]]:
+        """Get top songs for a specific server."""
+        try:
+            from utils import db
+            return await db.get_server_top_songs(guild_id, limit)
+        except Exception as e:
+            logger.error("get_server_top_songs", e, guild_id=guild_id)
+            return []
+
     async def get_all_servers(self) -> List[Dict]:
-        """Get information about all servers the bot is in"""
+        """Get information about all servers the bot is in."""
         try:
             servers = []
-            
-            # Get bot instance to access all guilds
-            bot = getattr(self, 'bot', None)
-            
+            bot = getattr(self, "bot", None)
+
             if bot:
-                # Include ALL guilds the bot is in
+                from utils import db
                 for guild in bot.guilds:
-                    guild_id_str = str(guild.id)
-                    
-                    # Check if we have stats for this guild
-                    if guild_id_str in self._server_stats_cache:
-                        stats = self._server_stats_cache[guild_id_str]
-                        servers.append({
-                            'guild_id': guild.id,
-                            'guild_name': guild.name,
-                            'total_plays': stats.get('total_plays', 0),
-                            'recent_plays': stats.get('recent_plays', 0),
-                            'last_updated': stats.get('last_updated', ''),
-                            'command_count': sum(stats.get('command_usage', {}).values())
-                        })
-                    else:
-                        # Guild exists but has no stats yet
-                        servers.append({
-                            'guild_id': guild.id,
-                            'guild_name': guild.name,
-                            'total_plays': 0,
-                            'recent_plays': 0,
-                            'last_updated': datetime.now().isoformat(),
-                            'command_count': 0
-                        })
-            else:
-                # Fallback: only show servers with play history (old behavior)
-                for guild_id, stats in self._server_stats_cache.items():
-                    guild_name = stats.get('guild_name', 'Unknown Server')
-                    
+                    raw = await db.get_server_stats(guild.id)
                     servers.append({
-                        'guild_id': int(guild_id),
-                        'guild_name': guild_name,
-                        'total_plays': stats.get('total_plays', 0),
-                        'recent_plays': stats.get('recent_plays', 0),
-                        'last_updated': stats.get('last_updated', ''),
-                        'command_count': sum(stats.get('command_usage', {}).values())
+                        "guild_id": guild.id,
+                        "guild_name": guild.name,
+                        "total_plays": raw["total_plays"],
+                        "recent_plays": raw["recent_plays"],
+                        "last_updated": (
+                            datetime.fromtimestamp(raw["last_updated"]).isoformat()
+                            if raw.get("last_updated") else ""
+                        ),
+                        "command_count": sum(raw["command_usage"].values()),
+                        "in_voice": guild.voice_client is not None,
+                        "voice_channel": (
+                            guild.voice_client.channel.name
+                            if guild.voice_client and guild.voice_client.channel
+                            else None
+                        ),
                     })
-            
-            # Sort by total plays (most active first)
-            servers.sort(key=lambda x: x['total_plays'], reverse=True)
+
+            servers.sort(key=lambda x: x["total_plays"], reverse=True)
             return servers
-            
+
         except Exception as e:
             logger.error("get_all_servers", e)
             return []
 
     async def get_global_stats(self) -> Dict:
-        """Get combined stats across all servers"""
+        """Get combined stats across all servers."""
         try:
-            total_plays = 0
-            total_guilds = 0
-            combined_most_played = {}
-            total_recent = 0
-            combined_command_usage = {}
-            
-            # Use cached stats
-            for guild_id, stats in self._server_stats_cache.items():
-                total_plays += stats.get('total_plays', 0)
-                total_recent += stats.get('recent_plays', 0)
-                total_guilds += 1
-                
-                # Combine most played songs
-                for song, count in stats.get('most_played', {}).items():
-                    combined_most_played[song] = combined_most_played.get(song, 0) + count
-                
-                # Combine command usage
-                for cmd, count in stats.get('command_usage', {}).items():
-                    combined_command_usage[cmd] = combined_command_usage.get(cmd, 0) + count
-            
-            # Get server information
+            from utils import db
+            base = await db.get_global_stats()
+
+            # Supplement with server list from bot guilds
             servers = await self.get_all_servers()
-            
-            # Get top listeners & activity
-            top_listeners = self._get_global_top_listeners()
-            peak_activity = self._get_peak_activity()
-            
+
+            # Rebuild top_listeners from listening_history is expensive;
+            # return empty list here — dashboard can add a dedicated endpoint later.
             return {
-                'total_plays': total_plays,
-                'active_guilds': total_guilds,
-                'recent_plays': total_recent,
-                'most_played': dict(sorted(combined_most_played.items(), 
-                                         key=lambda x: x[1], reverse=True)[:20]),
-                'command_usage': dict(sorted(combined_command_usage.items(),
-                                           key=lambda x: x[1], reverse=True)),
-                'top_listeners': top_listeners,
-                'peak_activity': peak_activity,
-                'servers': servers
+                "total_plays": base["total_plays"],
+                "active_guilds": base["active_guilds"],
+                "recent_plays": base["recent_plays"],
+                "most_played": base["most_played"],
+                "command_usage": base["command_usage"],
+                "top_listeners": [],
+                "peak_activity": [0] * 24,
+                "servers": servers,
             }
-            
         except Exception as e:
             logger.error("get_global_stats", e)
             return {
-                'total_plays': 0,
-                'active_guilds': 0,
-                'recent_plays': 0,
-                'most_played': {},
-                'servers': []
+                "total_plays": 0,
+                "active_guilds": 0,
+                "recent_plays": 0,
+                "most_played": {},
+                "servers": [],
             }
-    
-    def _get_global_top_listeners(self, limit: int = 10) -> List[Dict]:
-        """Get top listeners across all servers"""
-        listeners = {}
-        for play in self._plays_cache:
-            name = play.get('requester_name', 'Unknown')
-            if name != 'Unknown':
-                listeners[name] = listeners.get(name, 0) + 1
-        
-        sorted_listeners = sorted(listeners.items(), key=lambda x: x[1], reverse=True)[:limit]
-        return [{'name': name, 'count': count} for name, count in sorted_listeners]
 
-    def _get_peak_activity(self) -> List[int]:
-        """Get activity by hour of day (0-23) based on all plays"""
-        # Returns simple list of 24 integers
-        hours = [0] * 24
-        for play in self._plays_cache:
-            try:
-                # Assuming timestamp is ISO format
-                ts = datetime.fromisoformat(play.get('timestamp'))
-                hours[ts.hour] += 1
-            except Exception:
-                continue
-        return hours
-
-    async def get_server_top_songs(self, guild_id: int, limit: int = 10) -> List[Tuple[str, int]]:
-        """Get top songs for a specific server"""
-        try:
-            stats = await self.get_server_stats(guild_id)
-            sorted_songs = sorted(stats.most_played.items(), 
-                                key=lambda x: x[1], reverse=True)
-            return sorted_songs[:limit]
-            
-        except Exception as e:
-            logger.error("get_server_top_songs", e, guild_id=guild_id)
-            return []
-
-    # --- Remote Control Action Queue ---
+    # ------------------------------------------------------------------
+    # Remote Control Action Queue (still file-based — simple and fast)
+    # ------------------------------------------------------------------
 
     async def queue_action(self, guild_id: int, action: str, data: dict = None):
-        """Queue an action for the bot to execute"""
+        """Queue an action for the bot to execute."""
         async with self._lock:
             try:
                 new_action = {
-                    'guild_id': guild_id,
-                    'action': action,
-                    'data': data or {},
-                    'timestamp': datetime.now().isoformat(),
-                    'id': str(os.urandom(4).hex()) 
+                    "guild_id": guild_id,
+                    "action": action,
+                    "data": data or {},
+                    "timestamp": datetime.now().isoformat(),
+                    "id": os.urandom(4).hex(),
                 }
-                
+
                 def _write_action():
                     actions = []
                     if os.path.exists(self.actions_file):
                         try:
-                            with open(self.actions_file, 'r', encoding='utf-8') as f:
+                            with open(self.actions_file, "r", encoding="utf-8") as f:
                                 actions = json.load(f)
                         except Exception:
                             actions = []
-                    
                     actions.append(new_action)
-                    
-                    with open(self.actions_file, 'w', encoding='utf-8') as f:
+                    with open(self.actions_file, "w", encoding="utf-8") as f:
                         json.dump(actions, f, indent=2)
-                
+
                 await asyncio.to_thread(_write_action)
-                    
                 logger.info(f"Queued action '{action}' for guild {guild_id}")
                 return True
             except Exception as e:
@@ -496,29 +265,25 @@ class StatsManager:
                 return False
 
     async def get_pending_actions(self) -> List[Dict]:
-        """Get and clear pending actions for the bot to execute"""
+        """Get and clear pending actions for the bot to execute."""
         async with self._lock:
             try:
                 def _read_and_clear():
                     if not os.path.exists(self.actions_file):
                         return []
-                    
-                    with open(self.actions_file, 'r', encoding='utf-8') as f:
+                    with open(self.actions_file, "r", encoding="utf-8") as f:
                         actions = json.load(f)
-                    
                     if not actions:
                         return []
-                    
-                    # Clear the file (consume actions)
-                    with open(self.actions_file, 'w', encoding='utf-8') as f:
+                    with open(self.actions_file, "w", encoding="utf-8") as f:
                         json.dump([], f)
-                    
                     return actions
-                
+
                 return await asyncio.to_thread(_read_and_clear)
             except Exception as e:
                 logger.error("get_pending_actions", e)
                 return []
+
 
 # Global stats manager instance
 stats_manager = StatsManager()

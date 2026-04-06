@@ -1,204 +1,237 @@
+"""
+Flask-SocketIO dashboard for Music Bot.
+Runs in a SEPARATE container with gevent (incompatible with uvloop, which only
+runs in the bot container).
 
-# import eventlet
-# eventlet.monkey_patch()
+Changes vs. original:
+- Replaced threading.Thread with socketio.start_background_task (gevent-safe).
+- Removed the broken _run_async wrapper; dashboard has its own sync event loop.
+- Background push interval increased to 5 s (was 2 s) to reduce CPU pressure.
+- Added /api/system endpoint.
+- Added /api/guilds/<guild_id>/queue  endpoint (reads stats DB).
+"""
 
 import os
 import secrets
 import asyncio
-import threading
 import time
 from flask import Flask, render_template, jsonify, request, session
 from flask_socketio import SocketIO, emit
 import psutil
 import logging
+from datetime import datetime
 from config import config
 from utils.logger import logger
 from utils.stats_manager import stats_manager
 
-def _run_async(coro):
-    """Safely run an async coroutine from synchronous Flask context."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If there's already a running loop, create a new one in this thread
-            loop = asyncio.new_event_loop()
-            try:
-                return loop.run_until_complete(coro)
-            finally:
-                loop.close()
-        else:
-            return loop.run_until_complete(coro)
-    except RuntimeError:
-        # No event loop exists in this thread
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
-from datetime import datetime
 
-# Initialize Flask app
+# ---------------------------------------------------------------------------
+# Async helper  (used only for calls that NEED async, e.g. aiosqlite)
+# ---------------------------------------------------------------------------
+
+def _run_async(coro):
+    """Run an async coroutine from synchronous gevent context."""
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+# ---------------------------------------------------------------------------
+# Flask + SocketIO setup
+# ---------------------------------------------------------------------------
+
 app = Flask(__name__)
 
-# Secure secret key configuration
 flask_secret = os.getenv("FLASK_SECRET_KEY")
 if not flask_secret:
-    # Generate a secure random key for this session
     flask_secret = secrets.token_hex(32)
     logger.warning(
-        "FLASK_SECRET_KEY not set - using generated key. "
+        "FLASK_SECRET_KEY not set — using generated key. "
         "Sessions will NOT persist across restarts! "
-        "Set FLASK_SECRET_KEY environment variable for production."
+        "Set FLASK_SECRET_KEY in your .env for production."
     )
 app.secret_key = flask_secret
+
+# gevent is the async mode for the dashboard container (NOT uvloop)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 
-# Hide Werkzeug logs
-log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR)
+# Silence Werkzeug request spam
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
-# Admin PIN for remote control (REQUIRED for security)
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
 ADMIN_PIN = os.getenv("ADMIN_PIN")
 if not ADMIN_PIN:
     logger.warning(
-        "ADMIN_PIN environment variable is NOT set! "
-        "Dashboard remote control will be DISABLED for security. "
-        "Please set ADMIN_PIN to a secure value (minimum 6 characters)."
+        "ADMIN_PIN not set — remote control is DISABLED. "
+        "Set ADMIN_PIN in your .env (min 6 chars) to enable it."
     )
-    ADMIN_PIN = secrets.token_hex(16)  # Random unusable PIN if not configured
+    ADMIN_PIN = secrets.token_hex(16)  # Random unusable PIN
 
-# Validate PIN strength if set
 if ADMIN_PIN and len(ADMIN_PIN) < 6:
-    logger.warning(
-        f"ADMIN_PIN is too short ({len(ADMIN_PIN)} chars). "
-        "Please use at least 6 characters for better security."
-    )
+    logger.warning(f"ADMIN_PIN is too short ({len(ADMIN_PIN)} chars). Use at least 6.")
 
-# Basic auth helper
-def check_auth(pin):
+
+def check_auth(pin: str) -> bool:
     return pin == ADMIN_PIN
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 @app.route('/')
 def index():
     return render_template('dashboard_enhanced.html')
 
+
 @app.route('/api/stats')
 def get_stats():
-    """API endpoint for raw stats"""
-    stats = _run_async(stats_manager.get_global_stats())
-    return jsonify(stats)
+    """Raw stats dump — same payload as the WebSocket push."""
+    return jsonify(_fetch_stats())
+
+
+@app.route('/api/health')
+def health_check():
+    """Lightweight health endpoint (checked by docker-compose healthcheck)."""
+    return jsonify({
+        'status': 'online',
+        'cpu': psutil.cpu_percent(),
+        'memory': psutil.virtual_memory().percent,
+        'timestamp': datetime.now().isoformat(),
+    })
+
+
+@app.route('/api/system')
+def system_info():
+    """Detailed system resource snapshot."""
+    mem = psutil.virtual_memory()
+    disk = psutil.disk_usage('/')
+    return jsonify({
+        'cpu_percent': psutil.cpu_percent(interval=None),
+        'memory': {
+            'total_mb': round(mem.total / 1024 / 1024),
+            'used_mb':  round(mem.used  / 1024 / 1024),
+            'percent':  mem.percent,
+        },
+        'disk': {
+            'total_gb': round(disk.total / 1024 / 1024 / 1024, 1),
+            'used_gb':  round(disk.used  / 1024 / 1024 / 1024, 1),
+            'percent':  disk.percent,
+        },
+        'timestamp': datetime.now().isoformat(),
+    })
+
+
+@app.route('/api/guilds/<int:guild_id>/top-songs')
+def guild_top_songs(guild_id: int):
+    """Top 10 songs for a specific guild."""
+    try:
+        from utils import db
+        songs = _run_async(db.get_server_top_songs(guild_id, limit=10))
+        return jsonify({'guild_id': guild_id, 'songs': [{'title': t, 'plays': c} for t, c in songs]})
+    except Exception as e:
+        logger.error("api_guild_top_songs", e)
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/control', methods=['POST'])
 def remote_control():
-    """API endpoint for remote control actions"""
-    data = request.json
+    """Queue a remote action for the bot to execute."""
+    data = request.json or {}
     pin = data.get('pin')
     action = data.get('action')
     guild_id = data.get('guild_id')
 
     if not check_auth(pin):
         return jsonify({'success': False, 'error': 'Invalid PIN'}), 401
-    
+
     if not action or not guild_id:
         return jsonify({'success': False, 'error': 'Missing action or guild_id'}), 400
-        
+
     payload = data.get('data', {})
-        
     try:
         success = _run_async(stats_manager.queue_action(int(guild_id), action, payload))
         if success:
             return jsonify({'success': True, 'message': f'Action {action} queued'})
-        else:
-            return jsonify({'success': False, 'error': 'Failed to queue action'}), 500
+        return jsonify({'success': False, 'error': 'Failed to queue action'}), 500
     except Exception as e:
         logger.error("remote_control_api", e)
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/health')
-def health_check():
-    """API endpoint for system health"""
-    cpu_percent = psutil.cpu_percent()
-    memory = psutil.virtual_memory()
-    
-    return jsonify({
-        'status': 'online',
-        'cpu': cpu_percent,
-        'memory': memory.percent,
-        'timestamp': datetime.now().isoformat()
-    })
 
-# WebSocket Connection
+# ---------------------------------------------------------------------------
+# WebSocket events
+# ---------------------------------------------------------------------------
+
 @socketio.on('connect')
 def handle_connect():
-    emit('status', {'msg': 'Connected to dashboard backend'})
+    emit('status', {'msg': 'Connected to Music Bot dashboard'})
 
-# Background task to push updates
 
-def background_stats_update():
-    """Background task to push stats to clients"""
-    while True:
-        try:
-            # Fetch fresh stats
-            stats = _run_async(_fetch_fresh_stats())
-            
-            # Emit to all clients
-            socketio.emit('stats_update', stats)
-            
-            # Sleep for 2 seconds
-            time.sleep(2)
-            
-        except Exception as e:
-            logger.error("dashboard_background_task", e)
-            time.sleep(5)
+# ---------------------------------------------------------------------------
+# Background stats push  (uses gevent greenlet via start_background_task)
+# ---------------------------------------------------------------------------
 
-async def _fetch_fresh_stats():
-    """Helper to fetch and format all stats"""
-    global_stats = await stats_manager.get_global_stats()
-    
-    # Get system stats
-    cpu_percent = psutil.cpu_percent()
-    memory = psutil.virtual_memory()
-    
-    # Calculate uptime (mockup for now, could be improved)
-    # in a real scenario we'd track process start time
-    
+def _fetch_stats() -> dict:
+    """Synchronous stats fetch — called from gevent greenlet."""
+    try:
+        global_stats = _run_async(stats_manager.get_global_stats())
+    except Exception:
+        global_stats = {}
+
+    mem = psutil.virtual_memory()
     return {
-        'total_plays': global_stats.get('total_plays', 0),
+        'total_plays':  global_stats.get('total_plays', 0),
         'active_guilds': global_stats.get('active_guilds', 0),
         'recent_plays': global_stats.get('recent_plays', 0),
-        'most_played': global_stats.get('most_played', {}),
+        'most_played':  global_stats.get('most_played', {}),
         'system': {
-            'cpu': cpu_percent,
-            'memory': memory.percent,
-            'status': 'Online'
+            'cpu':    psutil.cpu_percent(),
+            'memory': mem.percent,
+            'status': 'Online',
         },
         'analytics': {
-            'top_listeners': global_stats.get('top_listeners', []),
-            'peak_activity': global_stats.get('peak_activity', []), # returns list of 24 ints
-            'command_usage': global_stats.get('command_usage', {})
+            'top_listeners':  global_stats.get('top_listeners', []),
+            'peak_activity':  global_stats.get('peak_activity', [0] * 24),
+            'command_usage':  global_stats.get('command_usage', {}),
         },
-        'servers': global_stats.get('servers', [])
+        'servers': global_stats.get('servers', []),
     }
 
-def run_dashboard():
-    """Run the Flask-SocketIO server"""
-    try:
-        port = int(os.environ.get("PORT", 5000))
-        logger.info(f"Starting dashboard on port {port}")
-        
-        # Run server
-        socketio.run(app, host='0.0.0.0', port=port, use_reloader=False)
-        
-    except Exception as e:
-        logger.error("dashboard_server", e)
-        raise
 
-# Start background stats update thread at module level
-# This ensures it runs even when imported by Gunicorn
-thread = threading.Thread(target=background_stats_update)
-thread.daemon = True
-thread.start()
-logger.info("Background stats update thread started")
+def background_stats_push():
+    """
+    Gevent background task: pushes updated stats to all connected clients
+    every 5 seconds via WebSocket.
+    """
+    while True:
+        try:
+            stats = _fetch_stats()
+            socketio.emit('stats_update', stats)
+        except Exception as e:
+            logger.error("dashboard_background_push", e)
+
+        socketio.sleep(5)  # gevent-aware sleep — yields to other greenlets
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def run_dashboard():
+    port = int(os.environ.get("PORT", 5000))
+    logger.info(f"Starting dashboard on port {port}")
+
+    # Start background stats push as a gevent greenlet (not a thread)
+    socketio.start_background_task(background_stats_push)
+
+    socketio.run(app, host='0.0.0.0', port=port, use_reloader=False)
+
 
 if __name__ == "__main__":
     run_dashboard()
