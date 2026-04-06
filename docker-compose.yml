@@ -76,12 +76,11 @@ services:
       retries: 3
       start_period: 60s
 
-    # ── Sysctl tuning (Change 15) ─────────────────────────────────────────
-    # Larger UDP buffers prevent packet loss during high-quality voice streaming.
-    # Requires Docker >= 20.10 and kernel-level permission on the host.
-    sysctls:
-      net.core.rmem_max: 2500000
-      net.core.wmem_max: 2500000
+    # ── Sysctl tuning (Removed) ───────────────────────────────────────────
+    # sysctls tuning caused unsafe procfs detected error on Ubuntu.
+    # sysctls:
+    #   net.core.rmem_max: 2500000
+    #   net.core.wmem_max: 2500000
 
 
   # ── Web Dashboard ────────────────────────────────────────────────────────
