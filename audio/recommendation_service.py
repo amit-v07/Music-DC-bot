@@ -251,10 +251,17 @@ class YouTubeMusicRecommendationEngine:
         # Use connection pool to limit concurrent operations
         try:
             from utils.connection_pool import ytdlp_pool
-            
+
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': True,
+                'skip_download': True,
+            }
+
             async def _pooled_extract():
                 video_url_to_resolve = video_url
-                
+
                 # First get video info for title
                 info = await ytdlp_pool.execute(ydl_opts, video_url_to_resolve, download=False)
                 if not info or 'title' not in info:
