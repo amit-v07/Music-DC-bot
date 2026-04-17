@@ -783,7 +783,9 @@ class MusicCog(commands.Cog):
                 
                 try:
                     # Get recommendations based on listening history
-                    recommendations = await audio_manager.get_autoplay_recommendations(guild_id, count=5)
+                    recommendations = await audio_manager.get_autoplay_recommendations(
+                        guild_id, count=config.autoplay_songs_per_batch
+                    )
                     
                     if recommendations:
                         # Add to queue (this sets current_index to 0 since queue was empty)
@@ -1046,7 +1048,9 @@ async def handle_song_end(ctx):
                     await ctx.send(f"🎵 **Autoplay**: {reply_end}")
                     
                     # Get recommendations
-                    recommendations = await audio_manager.get_autoplay_recommendations(guild_id, count=5)
+                    recommendations = await audio_manager.get_autoplay_recommendations(
+                        guild_id, count=config.autoplay_songs_per_batch
+                    )
                     
                     if recommendations:
                         # Clear old queue first so add_songs resets index to 0
@@ -1101,7 +1105,9 @@ async def trigger_autoplay_buffer(ctx, guild_id):
             return
 
         # Fetch songs silently
-        recommendations = await audio_manager.get_autoplay_recommendations(guild_id, count=5)
+        recommendations = await audio_manager.get_autoplay_recommendations(
+            guild_id, count=config.autoplay_songs_per_batch
+        )
         
         if recommendations:
             audio_manager.add_songs(guild_id, recommendations)

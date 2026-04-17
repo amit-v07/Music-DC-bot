@@ -27,6 +27,8 @@ services:
       - DEFAULT_VOLUME=${DEFAULT_VOLUME:-0.5}
       - IDLE_TIMEOUT=${IDLE_TIMEOUT:-300}
       - ALONE_TIMEOUT=${ALONE_TIMEOUT:-60}
+      - AUTOPLAY_SONGS_PER_BATCH=${AUTOPLAY_SONGS_PER_BATCH:-2}
+      - MAX_CONCURRENT_STREAMS=${MAX_CONCURRENT_STREAMS:-4}
       # SQLite path (inside the bot-data volume)
       - DB_PATH=/data/music_bot.db
       # Gemini AI (optional)
@@ -92,17 +94,19 @@ services:
     container_name: music-bot-dashboard
     restart: unless-stopped
 
-    # Run dashboard.py directly — NOT gunicorn.
-    # Gunicorn + gevent-websocket has race conditions with aiosqlite and the
-    # gevent monkey-patch order.  Direct invocation is simpler and equally stable.
-    command: python dashboard.py
+    # FastAPI + python-socketio ASGI (single asyncio loop; no gevent).
+    command: >
+      uvicorn dashboard:asgi_app
+      --host 0.0.0.0
+      --port 5000
+      --log-level info
 
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - SPOTIPY_CLIENT_ID=${SPOTIPY_CLIENT_ID:-}
       - SPOTIPY_CLIENT_SECRET=${SPOTIPY_CLIENT_SECRET:-}
-      # Dashboard security — generate with:
-      #   python -c "import secrets; print(secrets.token_hex(32))"
+      # Dashboard session secret — FLASK_SECRET_KEY kept for backward compatibility
+      - DASHBOARD_SECRET_KEY=${DASHBOARD_SECRET_KEY:-}
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
       - ADMIN_PIN=${ADMIN_PIN:-}
       - PORT=5000

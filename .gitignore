@@ -26,3 +26,6 @@ landing-page/
 venv/
 stats/
 /music_web_app
+
+# commit graph outputs, ignore the extraction cache
+graphify-out/cache/

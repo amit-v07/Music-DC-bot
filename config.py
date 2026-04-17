@@ -42,7 +42,7 @@ class BotConfig:
     api_request_delay: float = 0.1
     
     # Autoplay settings
-    autoplay_songs_per_batch: int = 5  # How many songs to add when queue ends
+    autoplay_songs_per_batch: int = 2  # How many songs to add per autoplay wave (env: AUTOPLAY_SONGS_PER_BATCH)
     autoplay_max_history: int = 20  # Max recent songs to track per server
     autoplay_enabled_by_default: bool = False
     
@@ -136,6 +136,8 @@ def load_config() -> BotConfig:
         idle_timeout=int(os.getenv('IDLE_TIMEOUT', '300')),
         alone_timeout=int(os.getenv('ALONE_TIMEOUT', '60')),
         google_api_key=os.getenv('GOOGLE_API_KEY'),
+        autoplay_songs_per_batch=max(1, int(os.getenv('AUTOPLAY_SONGS_PER_BATCH', '2'))),
+        max_concurrent_streams=max(1, int(os.getenv('MAX_CONCURRENT_STREAMS', '4'))),
     )
 
 

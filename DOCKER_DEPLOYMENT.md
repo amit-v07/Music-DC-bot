@@ -11,6 +11,7 @@ This guide provides detailed instructions for deploying the Discord Music Bot us
 - [Production Deployment](#production-deployment)
 - [Maintenance](#maintenance)
 - [Troubleshooting](#troubleshooting)
+- [CI/CD (GitHub Actions)](#cicd-github-actions)
 
 ## Prerequisites
 
@@ -96,6 +97,8 @@ docker-compose ps
 
 Open your browser to: `http://localhost:5000`
 
+The dashboard container runs **FastAPI** + **python-socketio** (ASGI) behind **Uvicorn** (see `docker-compose.yml` `dashboard.command`). Live stats use the same `stats_update` Socket.IO event as before.
+
 ## Configuration
 
 ### Environment Variables
@@ -110,6 +113,9 @@ Open your browser to: `http://localhost:5000`
 | `DEFAULT_VOLUME` | ❌ No | `0.5` | Default playback volume (0.1-2.0) |
 | `IDLE_TIMEOUT` | ❌ No | `300` | Idle timeout in seconds |
 | `ALONE_TIMEOUT` | ❌ No | `60` | Auto-leave timeout when alone |
+| `AUTOPLAY_SONGS_PER_BATCH` | ❌ No | `2` | Related tracks added per autoplay wave |
+| `MAX_CONCURRENT_STREAMS` | ❌ No | `4` | Max simultaneous voice streams (all guilds) |
+| `DASHBOARD_SECRET_KEY` | ❌ No | - | Optional; falls back to `FLASK_SECRET_KEY` |
 
 ### Volume Configuration
 
@@ -492,6 +498,37 @@ docker-compose up -d
 # Only reset cache
 docker volume rm music-dc-bot_bot-cache
 ```
+
+## CI/CD (GitHub Actions)
+
+This repository includes workflows under [.github/workflows](.github/workflows):
+
+| Workflow | When it runs | What it does |
+|----------|----------------|---------------|
+| **CI** (`ci.yml`) | Every push and pull request | Installs dependencies, runs `pytest tests/`, then builds the Docker image (no push) to verify the `Dockerfile`. |
+| **Deploy (home server)** (`deploy-home-server.yml`) | Manual only (`Actions` → run workflow) | SSH into your machine, `git fetch` / `git reset --hard` to match the branch you selected, then `docker compose build` and `docker compose up -d`. |
+| **Publish image (GHCR)** (`docker-publish.yml`) | Manual, or when you push a `v*` tag | Builds and pushes the image to `ghcr.io/<owner>/<repo>` (`latest`, `sha-*`, and the git tag when applicable). Use this if you prefer pulling a pre-built image on the server (e.g. with Watchtower) instead of building there. |
+
+### One-time setup: deploy from GitHub to your home server
+
+1. On the server, clone the repo once to the path you will use in production (for example `/opt/music-bot`), and ensure `docker compose` works from that directory.
+2. For a **private** repository, configure the server so `git fetch` / `git pull` work without a password (for example a [deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys#deploy-keys) read-only on the repo).
+3. In the GitHub repo: **Settings → Secrets and variables → Actions**, add:
+
+| Secret | Description |
+|--------|-------------|
+| `DEPLOY_HOST` | Hostname or IP of the home server |
+| `DEPLOY_USER` | SSH login user |
+| `DEPLOY_SSH_KEY` | Private key for that user (full PEM, including `BEGIN` / `END` lines) |
+| `DEPLOY_PATH` | Absolute path to the clone on the server (same directory where `docker-compose.yml` lives) |
+
+4. Run **Deploy (home server)** from the Actions tab. Choose the branch (usually `main`) in the workflow UI; the server checkout will be reset to `origin/<that-branch>`.
+
+**Note:** `git reset --hard` discards any local commits on the server; production changes should flow from GitHub, not edits on the box.
+
+### Optional: GHCR + Watchtower
+
+If you use **Publish image (GHCR)**, update `docker-compose.yml` so `bot` / `dashboard` use the published `image:` instead of `build:`, then on the server run `docker compose pull && docker compose up -d` (or rely on Watchtower if it is configured to watch those containers). The first time, `docker login ghcr.io` on the server may be required for private images; use a [Personal Access Token](https://docs.github.com/packages/getting-started-github-container-registry/about-github-container-registry#authenticating-to-the-github-container-registry) with `read:packages`.
 
 ## Getting Help
 

@@ -93,4 +93,4 @@ Monitor your bot's global performance at `http://localhost:5000`.
 - **Core**: Python 3.11, `discord.py` 2.3+
 - **Audio**: `yt-dlp` (Streamer), `FFmpeg` (Transcoder)
 - **Engine**: `uvloop` (Event Loop), `aiosqlite` (Database)
-- **Web**: `Flask-SocketIO` + `gevent`
+- **Web**: `FastAPI` + `python-socketio` (ASGI) + `Uvicorn`

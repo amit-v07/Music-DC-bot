@@ -8,7 +8,7 @@ FROM python:3.11-slim-bookworm
 
 # ── Build-time labels ──────────────────────────────────────────────────────
 LABEL maintainer="Music Bot"
-LABEL description="Discord music bot with yt-dlp, FFmpeg, and Flask dashboard"
+LABEL description="Discord music bot with yt-dlp, FFmpeg, and FastAPI dashboard"
 
 # ── Environment ────────────────────────────────────────────────────────────
 ENV PYTHONUNBUFFERED=1 \

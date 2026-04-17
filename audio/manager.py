@@ -18,9 +18,9 @@ from spotipy.oauth2 import SpotifyClientCredentials
 # so other asyncio executor work isn't blocked by long audio extractions.
 _ydl_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="ydl")
 
-# Global semaphore: max 4 simultaneous FFmpeg streams across all guilds.
+# Global semaphore: caps simultaneous FFmpeg voice streams across all guilds.
 # Acquired at playback start, released in the after_playing callback.
-_stream_semaphore = asyncio.Semaphore(4)
+_stream_semaphore = asyncio.Semaphore(config.max_concurrent_streams)
 
 @dataclass
 class Song:
@@ -512,7 +512,7 @@ class AudioManager:
         """
         Create a discord AudioSource for the given song.
 
-        Acquires the global _stream_semaphore (max 4 concurrent FFmpeg streams).
+        Acquires the global _stream_semaphore (see config.max_concurrent_streams).
         If we are at capacity, an embed is sent to notify_channel and we then
         await the semaphore — playback starts as soon as a slot opens.
 
@@ -535,10 +535,11 @@ class AudioManager:
         # ── Concurrency guard ─────────────────────────────────────────────
         if _stream_semaphore._value == 0 and notify_channel:
             try:
+                cap = config.max_concurrent_streams
                 embed = discord.Embed(
                     title="⏳ Bot is at capacity",
                     description=(
-                        "4 servers are already streaming. "
+                        f"{cap} server(s) are already streaming. "
                         "You're queued — music starts when a slot opens."
                     ),
                     color=0xF39C12,
@@ -815,133 +816,19 @@ class AudioManager:
         """Check if autoplay is enabled for a guild"""
         return self.autoplay_enabled.get(guild_id, False)
     
-    async def get_autoplay_recommendations(self, guild_id: int, count: int = 5) -> List[Song]:
+    async def get_autoplay_recommendations(self, guild_id: int, count: Optional[int] = None) -> List[Song]:
         """
         Fetch next batch of related songs from YouTube based on listening history
         
         Args:
             guild_id: Guild ID
-            count: Number of songs to fetch
+            count: Number of songs to fetch (defaults to config.autoplay_songs_per_batch)
             
         Returns:
             List of Song objects
         """
-        try:
-            # Import here to avoid circular dependency
-            from audio.recommendation_service import recommendation_manager
-            from utils.listening_history import listening_history
-            
-            # Get the last played video URL
-            last_url = listening_history.get_last_played_url(guild_id)
-            
-            if not last_url:
-                logger.warning(f"No listening history found for guild {guild_id}")
-                return []
-            
-            # Get current queue to avoid duplicates
-            queue = self.get_queue(guild_id)
-            
-            # Create set of titles and URLs already in queue for fast lookup
-            existing_titles = {song.title.lower() for song in queue if song.title}
-            existing_urls = {song.webpage_url for song in queue if song.webpage_url}
-            
-            # Additional: Get recent history to avoid repeating songs
-            recent_tracks = listening_history.get_recent_tracks(guild_id, count=20)
-            for track in recent_tracks:
-                if track.url:
-                    existing_urls.add(track.url)
-                if track.title:
-                    existing_titles.add(track.title.lower())
-            
-            # Also track the current/last playing song URL to avoid re-adding it
-            current_song = self.get_current_song(guild_id)
-            if current_song:
-                if current_song.webpage_url:
-                    existing_urls.add(current_song.webpage_url)
-                if current_song.original_url:
-                    existing_urls.add(current_song.original_url)
-                if current_song.title:
-                    existing_titles.add(current_song.title.lower())
-            
-            # Fetch more recommendations than needed to account for filtering
-            fetch_count = min(count * 3, 15)  # Fetch 3x what we need, max 15
-            recommendations = await recommendation_manager.get_next_recommendations(
-                last_url,
-                count=fetch_count
-            )
-            
-            if not recommendations:
-                logger.warning(f"No recommendations returned for guild {guild_id}")
-                return []
-            
-            # Filter out duplicates and convert to Song objects
-            songs = []
-            for rec in recommendations:
-                # Skip if URL or title already exists in queue
-                if rec.video_url in existing_urls:
-                    logger.info(f"Skipping duplicate URL: {rec.title}")
-                    continue
-                
-                if rec.title.lower() in existing_titles:
-                    logger.info(f"Skipping duplicate title: {rec.title}")
-                    continue
-                
-                # Add to result
-                song = Song(
-                    title=rec.title,
-                    webpage_url=rec.video_url,
-                    duration=rec.duration,
-                    thumbnail=rec.thumbnail,
-                    requester_id=0,  # Autoplay requester
-                    is_lazy=True  # Will be resolved when played
-                )
-                songs.append(song)
-                
-                # Also add to existing sets to avoid dupes within this batch
-                existing_urls.add(rec.video_url)
-                existing_titles.add(rec.title.lower())
-                
-                # Stop once we have enough unique songs
-                if len(songs) >= count:
-                    break
-            
-            # Pre-fetch the first recommendation in background to reduce latency
-            if songs:
-                asyncio.create_task(self.resolve_lazy_song(songs[0]))
-                
-            logger.info(f"Generated {len(songs)} unique autoplay recommendations for guild {guild_id}")
-            return songs
-            
-        except Exception as e:
-            logger.error("get_autoplay_recommendations", e, guild_id=guild_id)
-            return []
-
-    # Autoplay functionality
-    def enable_autoplay(self, guild_id: int):
-        """Enable autoplay for a guild"""
-        self.autoplay_enabled[guild_id] = True
-        logger.info(f"Autoplay enabled for guild {guild_id}")
-    
-    def disable_autoplay(self, guild_id: int):
-        """Disable autoplay for a guild"""
-        self.autoplay_enabled[guild_id] = False
-        logger.info(f"Autoplay disabled for guild {guild_id}")
-    
-    def is_autoplay_enabled(self, guild_id: int) -> bool:
-        """Check if autoplay is enabled for a guild"""
-        return self.autoplay_enabled.get(guild_id, False)
-    
-    async def get_autoplay_recommendations(self, guild_id: int, count: int = 5) -> List[Song]:
-        """
-        Fetch next batch of related songs from YouTube based on listening history
-        
-        Args:
-            guild_id: Guild ID
-            count: Number of songs to fetch
-            
-        Returns:
-            List of Song objects
-        """
+        if count is None:
+            count = config.autoplay_songs_per_batch
         try:
             # Import here to avoid circular dependency
             from audio.recommendation_service import recommendation_manager

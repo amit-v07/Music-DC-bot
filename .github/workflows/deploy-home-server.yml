@@ -1,0 +1,41 @@
+# Deploy to your home server over SSH (git pull + docker compose).
+#
+# Required repository secrets:
+#   DEPLOY_HOST       — hostname or IP (e.g. home.example.com)
+#   DEPLOY_USER       — SSH user (e.g. ubuntu)
+#   DEPLOY_SSH_KEY    — private key (full PEM, including BEGIN/END lines)
+#   DEPLOY_PATH       — absolute path to the clone used in production (e.g. /opt/music-bot)
+#
+# The server must already have this repo cloned, Docker, and Docker Compose v2.
+# For a private GitHub repo, configure a deploy key or credential helper on the server
+# so `git pull` works non-interactively.
+
+name: Deploy (home server)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-home-server
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.DEPLOY_PATH }}"
+            BRANCH='${{ github.ref_name }}'
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+            git reset --hard "origin/$BRANCH"
+            docker compose build
+            docker compose up -d

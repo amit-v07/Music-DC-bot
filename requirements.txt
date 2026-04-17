@@ -31,11 +31,11 @@ google-genai>=0.1.0            # Gemini AI responses (optional)
 # ── Music Service Integration ─────────────────────────────────────────────────
 spotipy>=2.22.1                # Spotify playlist support
 
-# ── Web Dashboard ────────────────────────────────────────────────────────────
-Flask>=2.3.2
-Flask-SocketIO>=5.3.4
-gevent>=23.9.1                 # Async worker for Flask-SocketIO (dashboard container)
-gevent-websocket>=0.10.1       # WebSocket support for gevent
+# ── Web Dashboard (FastAPI + Socket.IO ASGI, Uvicorn in Docker) ─────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-socketio>=5.11.0
+jinja2>=3.1.0
 
 # ── System Monitoring ─────────────────────────────────────────────────────────
 psutil>=5.9.5                  # CPU / memory metrics for dashboard

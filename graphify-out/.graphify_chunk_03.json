@@ -1,0 +1,103 @@
+{
+  "nodes": [
+    {"id": "mod:bot.py", "label": "Discord bot process", "kind": "runtime_entrypoint", "notes": "MusicBot lifecycle, background tasks, voice events, dynamic prefix, help embed, remote-action polling."},
+    {"id": "mod:config.py", "label": "Root BotConfig", "kind": "configuration", "notes": "Env-backed dataclass: audio/autoplay/resource limits, ffmpeg/ydl presets, quality tiers."},
+    {"id": "mod:dashboard.py", "label": "Flask-SocketIO dashboard", "kind": "companion_service", "notes": "Gevent stack; stats API/WS; PIN-gated remote control; separate from uvloop bot container."},
+    {"id": "mod:audio/cache.py", "label": "SongCache", "kind": "caching_layer", "notes": "Thread-safe TTL cache for yt-dlp resolutions; periodic expire sweep from bot."},
+    {"id": "mod:audio/manager.py", "label": "AudioManager", "kind": "core_domain", "notes": "Per-guild queues, playback prep, Spotify→lazy tracks, concurrency semaphore, prefetch, autoplay hooks, idle/alone timers."},
+    {"id": "mod:audio/recommendation_service.py", "label": "YouTube recommendation engine", "kind": "recommendation_backend", "notes": "ytmusicapi watch playlist with yt-dlp fallback; in-memory LRU-ish cache."},
+    {"id": "mod:audio/__init__.py", "label": "audio package export", "kind": "api_surface", "notes": "Re-exports AudioManager, Song, audio_manager singleton."},
+    {"id": "mod:commands/music.py", "label": "MusicCog + playback orchestration", "kind": "discord_cog", "notes": "User commands; smart search scoring; playlist batching; play_current_song/handle_song_end/autoplay buffering."},
+    {"id": "mod:commands/admin.py", "label": "AdminCog", "kind": "discord_cog", "notes": "Guild prefix/quality DB writes, stats embeds, queue/voice admin, owner broadcast/servers."},
+    {"id": "mod:commands/__init__.py", "label": "commands package", "kind": "package_stub", "notes": "Intentionally minimal; cogs loaded via load_extension."},
+    {"id": "mod:music_web_app/app.py", "label": "Browser music Flask app", "kind": "web_api", "notes": "REST for search, queue, control, MP3 stream endpoint; JIT URL resolve."},
+    {"id": "mod:music_web_app/config.py", "label": "Web Config", "kind": "configuration", "notes": "Distinct Config class from root; PORT/DEBUG, ffmpeg/ydl for web extraction."},
+    {"id": "mod:music_web_app/services/audio_provider.py", "label": "AudioProvider", "kind": "web_audio_backend", "notes": "ytmusicapi search; yt-dlp URL resolution; watch-playlist recommendations."},
+    {"id": "mod:music_web_app/services/queue_manager.py", "label": "QueueManager singleton", "kind": "in_memory_state", "notes": "Global queue + index; shuffle/repeat/jump/play_now."},
+    {"id": "mod:music_web_app/services/recommender.py", "label": "Recommender", "kind": "facade", "notes": "Thin wrapper over AudioProvider.get_recommendations for autoplay API."},
+    {"id": "mod:music_web_app/services/streamer.py", "label": "AudioStreamer", "kind": "streaming_adapter", "notes": "FFmpeg subprocess piping MP3 chunks for browser /api/stream."},
+    {"id": "mod:music_web_app/test_ytdlp.py", "label": "yt-dlp smoke script", "kind": "manual_tooling", "notes": "One-off AudioProvider.get_audio_url check."},
+    {"id": "mod:music_web_app/static/js/player.js", "label": "Web player UI", "kind": "frontend", "notes": "Fetches APIs, HTMLAudio /api/stream, seek via query param, client-side autoplay at queue end."},
+    {"id": "mod:tests/test_ai_brain.py", "label": "AI brain manual test", "kind": "test_script", "notes": "Async scenarios for ai_brain.get_response parity with cog messaging hooks."},
+    {"id": "mod:tests/test_autoplay.py", "label": "Recommendation engine manual test", "kind": "test_script", "notes": "Async smoke for YouTubeMusicRecommendationEngine.get_related_songs."}
+  ],
+  "edges": [
+    {"source": "mod:bot.py", "target": "mod:config.py", "relation": "reads_runtime_limits_and_defaults", "confidence_score": 0.96},
+    {"source": "mod:bot.py", "target": "mod:audio/manager.py", "relation": "applies_remote_stop_and_guild_voice_cleanup", "confidence_score": 0.95},
+    {"source": "mod:bot.py", "target": "mod:audio/cache.py", "relation": "hourly_cache_expire_task", "confidence_score": 0.94},
+    {"source": "mod:bot.py", "target": "mod:commands/music.py", "relation": "loads_extension_for_music_commands", "confidence_score": 0.98},
+    {"source": "mod:bot.py", "target": "mod:commands/admin.py", "relation": "loads_extension_for_admin_commands", "confidence_score": 0.98},
+    {"source": "mod:bot.py", "target": "mod:dashboard.py", "relation": "complementary_process_dashboard_queues_actions_bot_polls", "confidence_score": 0.9},
+    {"source": "mod:dashboard.py", "target": "mod:config.py", "relation": "shares_root_botconfig_env", "confidence_score": 0.97},
+    {"source": "mod:dashboard.py", "target": "mod:bot.py", "relation": "remote_actions_executed_in_bot_event_loop", "confidence_score": 0.91},
+    {"source": "mod:audio/manager.py", "target": "mod:config.py", "relation": "applies_volume_timeouts_quality_presets_ydl_ffmpeg", "confidence_score": 0.96},
+    {"source": "mod:audio/manager.py", "target": "mod:audio/cache.py", "relation": "lazy_resolution_hits_and_populates_song_cache", "confidence_score": 0.95},
+    {"source": "mod:audio/manager.py", "target": "mod:audio/recommendation_service.py", "relation": "autoplay_batches_via_recommendation_manager", "confidence_score": 0.94},
+    {"source": "mod:audio/recommendation_service.py", "target": "mod:audio/manager.py", "relation": "supplies_recommendedsong_feeding_song_queue_items", "confidence_score": 0.93},
+    {"source": "mod:commands/music.py", "target": "mod:config.py", "relation": "tunes_ytdlp_playlist_smart_search_cooldowns", "confidence_score": 0.95},
+    {"source": "mod:commands/music.py", "target": "mod:audio/manager.py", "relation": "primary_playback_and_queue_mutations", "confidence_score": 0.98},
+    {"source": "mod:commands/music.py", "target": "mod:bot.py", "relation": "help_and_setprefix_read_prefix_cache", "confidence_score": 0.88},
+    {"source": "mod:commands/admin.py", "target": "mod:config.py", "relation": "owner_checks_quality_help_copy", "confidence_score": 0.94},
+    {"source": "mod:commands/admin.py", "target": "mod:audio/manager.py", "relation": "forceleave_clearqueue_volume_session", "confidence_score": 0.93},
+    {"source": "mod:commands/admin.py", "target": "mod:bot.py", "relation": "setprefix_updates_shared_prefix_cache", "confidence_score": 0.92},
+    {"source": "mod:audio/__init__.py", "target": "mod:audio/manager.py", "relation": "reexports_public_audio_api", "confidence_score": 0.99},
+    {"source": "mod:music_web_app/app.py", "target": "mod:music_web_app/config.py", "relation": "loads_flask_config_object", "confidence_score": 0.98},
+    {"source": "mod:music_web_app/app.py", "target": "mod:music_web_app/services/queue_manager.py", "relation": "queue_crud_and_current_track_for_stream", "confidence_score": 0.97},
+    {"source": "mod:music_web_app/app.py", "target": "mod:music_web_app/services/audio_provider.py", "relation": "search_home_jit_resolve_stream", "confidence_score": 0.96},
+    {"source": "mod:music_web_app/app.py", "target": "mod:music_web_app/services/recommender.py", "relation": "autoplay_api_delegates_recommender", "confidence_score": 0.95},
+    {"source": "mod:music_web_app/app.py", "target": "mod:music_web_app/services/streamer.py", "relation": "stream_endpoint_pipes_ffmpeg_output", "confidence_score": 0.96},
+    {"source": "mod:music_web_app/services/recommender.py", "target": "mod:music_web_app/services/audio_provider.py", "relation": "forwards_watch_playlist_recommendations", "confidence_score": 0.97},
+    {"source": "mod:music_web_app/services/audio_provider.py", "target": "mod:music_web_app/config.py", "relation": "clones_ytdlp_options_from_web_config", "confidence_score": 0.96},
+    {"source": "mod:music_web_app/services/streamer.py", "target": "mod:music_web_app/config.py", "relation": "references_config_module_pattern", "confidence_score": 0.85},
+    {"source": "mod:music_web_app/static/js/player.js", "target": "mod:music_web_app/app.py", "relation": "consumes_rest_stream_queue_control_autoplay", "confidence_score": 0.95},
+    {"source": "mod:music_web_app/static/js/player.js", "target": "mod:music_web_app/services/queue_manager.py", "relation": "ui_reflects_queue_state_from_api", "confidence_score": 0.92},
+    {"source": "mod:music_web_app/test_ytdlp.py", "target": "mod:music_web_app/services/audio_provider.py", "relation": "manual_verification_of_resolution_path", "confidence_score": 0.99},
+    {"source": "mod:tests/test_autoplay.py", "target": "mod:audio/recommendation_service.py", "relation": "validates_engine_related_songs_behavior", "confidence_score": 0.96},
+    {"source": "mod:tests/test_ai_brain.py", "target": "mod:commands/music.py", "relation": "exercises_same_ai_brain_actions_used_in_cog_replies", "confidence_score": 0.87},
+    {"source": "mod:config.py", "target": "mod:music_web_app/config.py", "relation": "parallel_configuration_domains_same_concerns_different_classes", "confidence_score": 0.9},
+    {"source": "mod:audio/recommendation_service.py", "target": "mod:music_web_app/services/audio_provider.py", "relation": "shared_ytmusic_watch_playlist_pattern_and_ytdlp_fallback_theme", "confidence_score": 0.82},
+    {"source": "mod:commands/music.py", "target": "mod:music_web_app/static/js/player.js", "relation": "both_implement_search_queue_autoplay_but_discord_vs_browser", "confidence_score": 0.84},
+    {"source": "mod:commands/__init__.py", "target": "mod:commands/music.py", "relation": "package_defers_loading_to_bot_setup_hook", "confidence_score": 0.9},
+    {"source": "mod:commands/__init__.py", "target": "mod:commands/admin.py", "relation": "package_defers_loading_to_bot_setup_hook", "confidence_score": 0.9}
+  ],
+  "hyperedges": [
+    {
+      "id": "h_discord_playback_pipeline",
+      "members": ["mod:commands/music.py", "mod:audio/manager.py", "mod:audio/cache.py", "mod:config.py"],
+      "relation": "command_invocation_to_ytdlp_resolve_cache_ffmpeg_discord_voice",
+      "confidence_score": 0.94
+    },
+    {
+      "id": "h_discord_autoplay_chain",
+      "members": ["mod:commands/music.py", "mod:audio/manager.py", "mod:audio/recommendation_service.py"],
+      "relation": "queue_end_and_buffering_fetch_related_songs_lazy_enqueue",
+      "confidence_score": 0.93
+    },
+    {
+      "id": "h_dashboard_bot_remote_control",
+      "members": ["mod:dashboard.py", "mod:bot.py", "mod:audio/manager.py"],
+      "relation": "pin_authenticated_enqueue_then_poll_pause_resume_skip_stop_voice",
+      "confidence_score": 0.9
+    },
+    {
+      "id": "h_web_streaming_stack",
+      "members": ["mod:music_web_app/static/js/player.js", "mod:music_web_app/app.py", "mod:music_web_app/services/queue_manager.py", "mod:music_web_app/services/audio_provider.py", "mod:music_web_app/services/streamer.py"],
+      "relation": "browser_player_drives_queue_stream_seek_and_mp3_transcode",
+      "confidence_score": 0.93
+    },
+    {
+      "id": "h_web_client_autoplay",
+      "members": ["mod:music_web_app/static/js/player.js", "mod:music_web_app/app.py", "mod:music_web_app/services/recommender.py", "mod:music_web_app/services/audio_provider.py", "mod:music_web_app/services/queue_manager.py"],
+      "relation": "queue_end_fetches_recommendations_adds_then_advances",
+      "confidence_score": 0.91
+    },
+    {
+      "id": "h_manual_test_coverage",
+      "members": ["mod:tests/test_ai_brain.py", "mod:tests/test_autoplay.py", "mod:music_web_app/test_ytdlp.py"],
+      "relation": "non_pytest_scripts_verify_llm_and_recommendation_and_resolution_paths",
+      "confidence_score": 0.88
+    }
+  ],
+  "input_tokens": 0,
+  "output_tokens": 0
+}
